@@ -41,7 +41,7 @@ export default function App() {
 
     const maps = world.maps.map((m) => ({
       ...m,
-      locations: mapIdToLocIds.get(m.id) ?? []
+      locations: mapIdToLocIds.get(m.id) ?? [],
     }));
 
     return { ...world, maps };
@@ -57,7 +57,7 @@ export default function App() {
       name: "New Map",
       description: "Describe this region...",
       size: { width: 2000, height: 2000, unit: "meters" },
-      locations: []
+      locations: [],
     };
 
     setWorld({ ...world, maps: [...world.maps, newMap] });
@@ -93,7 +93,7 @@ export default function App() {
       name: "New Location",
       position: { x: 0, y: 0, z: 0 },
       radius: 10,
-      tags: []
+      tags: [],
     };
 
     setWorld({ ...world, locations: [...world.locations, newLocation] });
@@ -114,18 +114,24 @@ export default function App() {
     ["world", "World"],
     ["maps", "Maps"],
     ["locations", "Locations"],
-    ["preview", "Preview"]
+    ["preview", "Preview"],
   ];
 
   return (
-    <div style={{ display: "flex", minHeight: "100vh", fontFamily: "system-ui, sans-serif" }}>
+    <div
+      style={{
+        display: "flex",
+        minHeight: "100vh",
+        fontFamily: "system-ui, sans-serif",
+      }}
+    >
       {/* SIDEBAR */}
       <aside
         style={{
           width: 220,
           borderRight: "1px solid #444",
           padding: 16,
-          height: "100vh"
+          height: "100vh",
         }}
       >
         <h2 style={{ marginTop: 0, fontSize: 16 }}>Open World Toolkit</h2>
@@ -142,7 +148,7 @@ export default function App() {
               borderRadius: 10,
               border: "1px solid #666",
               cursor: "pointer",
-              opacity: activeTab === key ? 1 : 0.8
+              opacity: activeTab === key ? 1 : 0.8,
             }}
           >
             {activeTab === key ? "▶ " : ""}
@@ -157,7 +163,14 @@ export default function App() {
 
         {/* WORLD EDITOR */}
         {activeTab === "world" && (
-          <section style={{ marginTop: 16, padding: 16, border: "1px solid #444", borderRadius: 8 }}>
+          <section
+            style={{
+              marginTop: 16,
+              padding: 16,
+              border: "1px solid #444",
+              borderRadius: 8,
+            }}
+          >
             <h2>World</h2>
 
             <label style={{ display: "block", marginBottom: 8 }}>
@@ -167,10 +180,15 @@ export default function App() {
                 onChange={(e) =>
                   setWorld({
                     ...world,
-                    world: { ...world.world, name: e.target.value }
+                    world: { ...world.world, name: e.target.value },
                   })
                 }
-                style={{ width: "100%", padding: 10, borderRadius: 6, border: "1px solid #666" }}
+                style={{
+                  width: "100%",
+                  padding: 10,
+                  borderRadius: 6,
+                  border: "1px solid #666",
+                }}
               />
             </label>
 
@@ -181,11 +199,16 @@ export default function App() {
                 onChange={(e) =>
                   setWorld({
                     ...world,
-                    world: { ...world.world, description: e.target.value }
+                    world: { ...world.world, description: e.target.value },
                   })
                 }
                 rows={3}
-                style={{ width: "100%", padding: 10, borderRadius: 6, border: "1px solid #666" }}
+                style={{
+                  width: "100%",
+                  padding: 10,
+                  borderRadius: 6,
+                  border: "1px solid #666",
+                }}
               />
             </label>
 
@@ -195,7 +218,7 @@ export default function App() {
                 padding: "10px 14px",
                 borderRadius: 8,
                 border: "1px solid #666",
-                cursor: "pointer"
+                cursor: "pointer",
               }}
             >
               Export JSON
@@ -205,7 +228,14 @@ export default function App() {
 
         {/* MAPS EDITOR */}
         {activeTab === "maps" && (
-          <section style={{ marginTop: 16, padding: 16, border: "1px solid #444", borderRadius: 8 }}>
+          <section
+            style={{
+              marginTop: 16,
+              padding: 16,
+              border: "1px solid #444",
+              borderRadius: 8,
+            }}
+          >
             <h2>Maps Editor</h2>
 
             <button
@@ -215,7 +245,7 @@ export default function App() {
                 padding: "10px 14px",
                 borderRadius: 8,
                 border: "1px solid #666",
-                cursor: "pointer"
+                cursor: "pointer",
               }}
             >
               + Add Map
@@ -224,9 +254,20 @@ export default function App() {
             {world.maps.map((map, index) => (
               <div
                 key={map.id}
-                style={{ marginBottom: 12, padding: 12, border: "1px solid #555", borderRadius: 8 }}
+                style={{
+                  marginBottom: 12,
+                  padding: 12,
+                  border: "1px solid #555",
+                  borderRadius: 8,
+                }}
               >
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                  }}
+                >
                   <strong>{map.id}</strong>
                   <button
                     onClick={() => deleteMap(map.id)}
@@ -234,7 +275,7 @@ export default function App() {
                       padding: "6px 10px",
                       borderRadius: 8,
                       border: "1px solid #666",
-                      cursor: "pointer"
+                      cursor: "pointer",
                     }}
                   >
                     Delete
@@ -256,7 +297,9 @@ export default function App() {
                   <div style={{ fontSize: 12 }}>Description</div>
                   <input
                     value={map.description}
-                    onChange={(e) => updateMap(index, { description: e.target.value })}
+                    onChange={(e) =>
+                      updateMap(index, { description: e.target.value })
+                    }
                     style={{ width: "100%", padding: 8 }}
                   />
                 </label>
@@ -267,7 +310,14 @@ export default function App() {
 
         {/* LOCATIONS EDITOR */}
         {activeTab === "locations" && (
-          <section style={{ marginTop: 16, padding: 16, border: "1px solid #444", borderRadius: 8 }}>
+          <section
+            style={{
+              marginTop: 16,
+              padding: 16,
+              border: "1px solid #444",
+              borderRadius: 8,
+            }}
+          >
             <h2>Locations Editor</h2>
 
             <button
@@ -279,9 +329,11 @@ export default function App() {
                 borderRadius: 8,
                 border: "1px solid #666",
                 cursor: world.maps.length === 0 ? "not-allowed" : "pointer",
-                opacity: world.maps.length === 0 ? 0.6 : 1
+                opacity: world.maps.length === 0 ? 0.6 : 1,
               }}
-              title={world.maps.length === 0 ? "Add a map first" : "Add a location"}
+              title={
+                world.maps.length === 0 ? "Add a map first" : "Add a location"
+              }
             >
               + Add Location
             </button>
@@ -289,9 +341,20 @@ export default function App() {
             {world.locations.map((loc, index) => (
               <div
                 key={loc.id}
-                style={{ marginBottom: 12, padding: 12, border: "1px solid #555", borderRadius: 8 }}
+                style={{
+                  marginBottom: 12,
+                  padding: 12,
+                  border: "1px solid #555",
+                  borderRadius: 8,
+                }}
               >
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                  }}
+                >
                   <strong>{loc.id}</strong>
                   <button
                     onClick={() => deleteLocation(loc.id)}
@@ -299,7 +362,7 @@ export default function App() {
                       padding: "6px 10px",
                       borderRadius: 8,
                       border: "1px solid #666",
-                      cursor: "pointer"
+                      cursor: "pointer",
                     }}
                   >
                     Delete
@@ -312,7 +375,9 @@ export default function App() {
                   <div style={{ fontSize: 12 }}>Location Name</div>
                   <input
                     value={loc.name}
-                    onChange={(e) => updateLocation(index, { name: e.target.value })}
+                    onChange={(e) =>
+                      updateLocation(index, { name: e.target.value })
+                    }
                     style={{ width: "100%", padding: 8 }}
                   />
                 </label>
@@ -321,7 +386,9 @@ export default function App() {
                   <div style={{ fontSize: 12 }}>Map</div>
                   <select
                     value={loc.mapId}
-                    onChange={(e) => updateLocation(index, { mapId: e.target.value })}
+                    onChange={(e) =>
+                      updateLocation(index, { mapId: e.target.value })
+                    }
                     style={{ width: "100%", padding: 8 }}
                   >
                     {world.maps.map((m) => (
@@ -340,7 +407,10 @@ export default function App() {
                       value={loc.position.x}
                       onChange={(e) =>
                         updateLocation(index, {
-                          position: { ...loc.position, x: Number(e.target.value) }
+                          position: {
+                            ...loc.position,
+                            x: Number(e.target.value),
+                          },
                         })
                       }
                       style={{ width: "100%", padding: 8 }}
@@ -354,7 +424,10 @@ export default function App() {
                       value={loc.position.y}
                       onChange={(e) =>
                         updateLocation(index, {
-                          position: { ...loc.position, y: Number(e.target.value) }
+                          position: {
+                            ...loc.position,
+                            y: Number(e.target.value),
+                          },
                         })
                       }
                       style={{ width: "100%", padding: 8 }}
@@ -368,7 +441,10 @@ export default function App() {
                       value={loc.position.z}
                       onChange={(e) =>
                         updateLocation(index, {
-                          position: { ...loc.position, z: Number(e.target.value) }
+                          position: {
+                            ...loc.position,
+                            z: Number(e.target.value),
+                          },
                         })
                       }
                       style={{ width: "100%", padding: 8 }}
@@ -381,7 +457,9 @@ export default function App() {
                   <input
                     type="number"
                     value={loc.radius}
-                    onChange={(e) => updateLocation(index, { radius: Number(e.target.value) })}
+                    onChange={(e) =>
+                      updateLocation(index, { radius: Number(e.target.value) })
+                    }
                     style={{ width: "100%", padding: 8 }}
                   />
                 </label>
@@ -392,17 +470,27 @@ export default function App() {
 
         {/* PREVIEW */}
         {activeTab === "preview" && (
-          <section style={{ marginTop: 16, padding: 16, border: "1px solid #444", borderRadius: 8 }}>
+          <section
+            style={{
+              marginTop: 16,
+              padding: 16,
+              border: "1px solid #444",
+              borderRadius: 8,
+            }}
+          >
             <h2>Preview</h2>
 
             <h3 style={{ marginBottom: 4 }}>{world.world.name}</h3>
-            <p style={{ marginTop: 0, opacity: 0.9 }}>{world.world.description}</p>
+            <p style={{ marginTop: 0, opacity: 0.9 }}>
+              {world.world.description}
+            </p>
 
             <h3>Maps</h3>
             <ul>
               {syncedWorld.maps.map((m) => (
                 <li key={m.id}>
-                  <strong>{m.name}</strong> — {m.description} (locs: {m.locations.length})
+                  <strong>{m.name}</strong> — {m.description} (locs:{" "}
+                  {m.locations.length})
                 </li>
               ))}
             </ul>
@@ -411,7 +499,8 @@ export default function App() {
             <ul>
               {world.locations.map((l) => (
                 <li key={l.id}>
-                  {l.name} @ ({l.position.x}, {l.position.y}, {l.position.z}) — map: {l.mapId}
+                  {l.name} @ ({l.position.x}, {l.position.y}, {l.position.z}) —
+                  map: {l.mapId}
                 </li>
               ))}
             </ul>
