@@ -14,6 +14,20 @@ function downloadJson(filename: string, data: unknown) {
 
   URL.revokeObjectURL(url);
 }
+function importJsonFile(file: File, onLoad: (data: unknown) => void) {
+  const reader = new FileReader();
+
+  reader.onload = () => {
+    try {
+      const parsed = JSON.parse(reader.result as string);
+      onLoad(parsed);
+    } catch {
+      alert("Invalid JSON file");
+    }
+  };
+
+  reader.readAsText(file);
+}
 
 type TabKey = "world" | "maps" | "locations" | "preview";
 
@@ -221,8 +235,61 @@ export default function App() {
                 cursor: "pointer",
               }}
             >
+              <label
+                style={{
+                  display: "inline-block",
+                  marginLeft: 12,
+                  padding: "10px 14px",
+                  borderRadius: 8,
+                  border: "1px solid #666",
+                  cursor: "pointer",
+                }}
+              >
+                Import JSON
+                <input
+                  type="file"
+                  accept="application/json"
+                  style={{ display: "none" }}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+
+                    importJsonFile(file, (data) => {
+                      setWorld(data as typeof world);
+                    });
+                  }}
+                />
+              </label>
               Export JSON
             </button>
+            <div style={{ marginTop: 12 }}>
+              <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 6 }}>
+                Import world JSON
+              </div>
+
+              <input
+                type="file"
+                accept=".json,application/json"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+
+                  const reader = new FileReader();
+                  reader.onload = () => {
+                    try {
+                      const parsed = JSON.parse(reader.result as string);
+                      setWorld(parsed);
+                      alert("Imported ✅");
+                    } catch {
+                      alert("Invalid JSON file");
+                    }
+                  };
+                  reader.readAsText(file);
+
+                  e.target.value = "";
+                }}
+              />
+            </div>
           </section>
         )}
 
