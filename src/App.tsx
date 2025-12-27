@@ -61,6 +61,22 @@ export default function App() {
     return { ...world, maps };
   }, [world]);
 
+  // ----- PREVIEW HELPERS (paste here) -----
+  const mapsById = new Map(syncedWorld.maps.map((m) => [m.id, m]));
+
+  const locationsByMapId = syncedWorld.locations.reduce<
+    Record<string, typeof syncedWorld.locations>
+  >((acc, loc) => {
+    const key = loc.mapId || "unassigned";
+    (acc[key] ||= []).push(loc);
+    return acc;
+  }, {});
+
+  // sort locations within each map (optional, but nice)
+  Object.values(locationsByMapId).forEach((arr) =>
+    arr.sort((a, b) => a.id.localeCompare(b.id))
+  );
+
   // ---------------- MAPS ----------------
   const addMap = () => {
     const nextNumber = world.maps.length + 1;
@@ -266,29 +282,6 @@ export default function App() {
               <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 6 }}>
                 Import world JSON
               </div>
-
-              <input
-                type="file"
-                accept=".json,application/json"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (!file) return;
-
-                  const reader = new FileReader();
-                  reader.onload = () => {
-                    try {
-                      const parsed = JSON.parse(reader.result as string);
-                      setWorld(parsed);
-                      alert("Imported ✅");
-                    } catch {
-                      alert("Invalid JSON file");
-                    }
-                  };
-                  reader.readAsText(file);
-
-                  e.target.value = "";
-                }}
-              />
             </div>
           </section>
         )}
