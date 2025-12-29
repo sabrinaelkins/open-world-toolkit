@@ -1,10 +1,12 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import worldData from "./data/world_example.json";
-import type { GameWorldFile, MapData, Location } from "./types/worldTypes";
+import type { GameWorldFile, MapData, LocationData } from "./types/worldTypes";
 
+// ----------------------
+// helpers: import/export
+// ----------------------
 function downloadJson(filename: string, data: unknown) {
-  const json = JSON.stringify(data, null, 2);
-  const blob = new Blob([json], { type: "application/json" });
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
 
   const a = document.createElement("a");
@@ -14,24 +16,15 @@ function downloadJson(filename: string, data: unknown) {
 
   URL.revokeObjectURL(url);
 }
-function importJsonFile(file: File, onLoad: (data: unknown) => void) {
-  const reader = new FileReader();
 
-  reader.onload = () => {
-    try {
-      const parsed = JSON.parse(reader.result as string);
-      onLoad(parsed);
-    } catch {
-      alert("Invalid JSON file");
-    }
-  };
-
-  reader.readAsText(file);
+function safeParseJson(text: string) {
+  return JSON.parse(text) as unknown;
 }
 
 type TabKey = "world" | "maps" | "locations" | "preview";
 
 export default function App() {
+  // Ensure we start from a deep copy
   const initialWorld = useMemo(() => {
     try {
       return structuredClone(worldData as GameWorldFile);
@@ -43,7 +36,11 @@ export default function App() {
   const [world, setWorld] = useState<GameWorldFile>(initialWorld);
   const [activeTab, setActiveTab] = useState<TabKey>("world");
 
-  // ---- keep map.locations in sync based on world.locations.mapId ----
+  const importInputRef = useRef<HTMLInputElement | null>(null);
+
+  // ----------------------------------------------------------------
+  // Keep map.locations derived from world.locations (single source)
+  // ----------------------------------------------------------------
   const syncedWorld: GameWorldFile = useMemo(() => {
     const mapIdToLocIds = new Map<string, string[]>();
 
@@ -61,84 +58,134 @@ export default function App() {
     return { ...world, maps };
   }, [world]);
 
-  // ----- PREVIEW HELPERS (paste here) -----
-  const mapsById = new Map(syncedWorld.maps.map((m) => [m.id, m]));
+  // ----------------------
+  // Lookup helpers
+  // ----------------------
+  const mapsById = useMemo(() => {
+    return new Map(syncedWorld.maps.map((m) => [m.id, m] as const));
+  }, [syncedWorld.maps]);
 
-  const locationsByMapId = syncedWorld.locations.reduce<
-    Record<string, typeof syncedWorld.locations>
-  >((acc, loc) => {
-    const key = loc.mapId || "unassigned";
-    (acc[key] ||= []).push(loc);
+  const locationById = useMemo(() => {
+    return new Map(syncedWorld.locations.map((l) => [l.id, l] as const));
+  }, [syncedWorld.locations]);
+
+  const locationsByMapId = useMemo(() => {
+    const acc: Record<string, LocationData[]> = {};
+    for (const loc of syncedWorld.locations) {
+      const key = loc.mapId || "unassigned";
+      (acc[key] ||= []).push(loc);
+    }
+    // sort each group by id (optional)
+    for (const key of Object.keys(acc)) {
+      acc[key].sort((a, b) => a.id.localeCompare(b.id));
+    }
     return acc;
-  }, {});
+  }, [syncedWorld.locations]);
 
-  // sort locations within each map (optional, but nice)
-  Object.values(locationsByMapId).forEach((arr) =>
-    arr.sort((a, b) => a.id.localeCompare(b.id))
-  );
+  // ----------------------
+  // World editor
+  // ----------------------
+  function updateWorldInfo(patch: Partial<GameWorldFile["world"]>) {
+    setWorld((prev) => ({
+      ...prev,
+      world: { ...prev.world, ...patch },
+    }));
+  }
 
-  // ---------------- MAPS ----------------
-  const addMap = () => {
-    const nextNumber = world.maps.length + 1;
-    const newMapId = `map_${String(nextNumber).padStart(3, "0")}`;
+  // ----------------------
+  // Maps editor
+  // ----------------------
+  function addMap() {
+    setWorld((prev) => {
+      const nextNumber = prev.maps.length + 1;
+      const newMapId = `map_${String(nextNumber).padStart(3, "0")}`;
 
-    const newMap: MapData = {
-      id: newMapId,
-      name: "New Map",
-      description: "Describe this region...",
-      size: { width: 2000, height: 2000, unit: "meters" },
-      locations: [],
-    };
+      const newMap: MapData = {
+        id: newMapId,
+        name: "New Map",
+        description: "Describe this region...",
+        size: { width: 2000, height: 2000, unit: "meters" },
+        locations: [], // will be synced by useMemo anyway
+      };
 
-    setWorld({ ...world, maps: [...world.maps, newMap] });
-  };
+      return { ...prev, maps: [...prev.maps, newMap] };
+    });
+  }
 
-  const deleteMap = (mapId: string) => {
-    const maps = world.maps.filter((m) => m.id !== mapId);
+  function updateMap(mapId: string, patch: Partial<MapData>) {
+    setWorld((prev) => ({
+      ...prev,
+      maps: prev.maps.map((m) => (m.id === mapId ? { ...m, ...patch } : m)),
+    }));
+  }
 
-    // if locations pointed at this map, move them to first remaining map (or blank)
-    const fallbackMapId = maps[0]?.id ?? "";
-    const locations = world.locations.map((l) =>
-      l.mapId === mapId ? { ...l, mapId: fallbackMapId } : l
-    );
+  function deleteMap(mapId: string) {
+    setWorld((prev) => {
+      // remove map
+      const maps = prev.maps.filter((m) => m.id !== mapId);
 
-    setWorld({ ...world, maps, locations });
-  };
+      // any locations that were assigned to this map become unassigned
+      const locations = prev.locations.map((l) =>
+        l.mapId === mapId ? { ...l, mapId: "unassigned" } : l
+      );
 
-  const updateMap = (index: number, patch: Partial<MapData>) => {
-    const maps = [...world.maps];
-    maps[index] = { ...maps[index], ...patch };
-    setWorld({ ...world, maps });
-  };
+      return { ...prev, maps, locations };
+    });
+  }
 
-  // -------------- LOCATIONS --------------
-  const addLocation = () => {
-    const nextNumber = world.locations.length + 1;
-    const newLocId = `loc_${String(nextNumber).padStart(3, "0")}`;
-    const firstMapId = world.maps[0]?.id ?? "map_001";
+  // ----------------------
+  // Locations editor
+  // ----------------------
+  function addLocation() {
+    setWorld((prev) => {
+      const nextNumber = prev.locations.length + 1;
+      const newLocId = `loc_${String(nextNumber).padStart(3, "0")}`;
 
-    const newLocation: Location = {
-      id: newLocId,
-      mapId: firstMapId,
-      name: "New Location",
-      position: { x: 0, y: 0, z: 0 },
-      radius: 10,
-      tags: [],
-    };
+      const newLoc: LocationData = {
+        id: newLocId,
+        name: "New Location",
+        mapId: prev.maps[0]?.id ?? "unassigned",
+        position: { x: 0, y: 0, z: 0 },
+        radius: 5,
+      };
 
-    setWorld({ ...world, locations: [...world.locations, newLocation] });
-  };
+      return { ...prev, locations: [...prev.locations, newLoc] };
+    });
+  }
 
-  const deleteLocation = (locId: string) => {
-    const locations = world.locations.filter((l) => l.id !== locId);
-    setWorld({ ...world, locations });
-  };
+  function updateLocation(index: number, patch: Partial<LocationData>) {
+    setWorld((prev) => {
+      const locations = prev.locations.slice();
+      locations[index] = { ...locations[index], ...patch };
+      return { ...prev, locations };
+    });
+  }
 
-  const updateLocation = (index: number, patch: Partial<Location>) => {
-    const locations = [...world.locations];
-    locations[index] = { ...locations[index], ...patch };
-    setWorld({ ...world, locations });
-  };
+  function deleteLocation(index: number) {
+    setWorld((prev) => {
+      const locations = prev.locations.slice();
+      locations.splice(index, 1);
+      return { ...prev, locations };
+    });
+  }
+
+  // ----------------------
+  // Import JSON
+  // ----------------------
+  async function onImportFile(file: File) {
+    try {
+      const text = await file.text();
+      const parsed = safeParseJson(text);
+
+      // Trusting it matches GameWorldFile structure:
+      setWorld(parsed as GameWorldFile);
+      alert("Imported ✅");
+    } catch {
+      alert("Invalid JSON file");
+    } finally {
+      if (importInputRef.current) importInputRef.current.value = "";
+    }
+  }
 
   const tabs: Array<[TabKey, string]> = [
     ["world", "World"],
@@ -153,6 +200,8 @@ export default function App() {
         display: "flex",
         minHeight: "100vh",
         fontFamily: "system-ui, sans-serif",
+        background: "#222",
+        color: "#eee",
       }}
     >
       {/* SIDEBAR */}
@@ -177,6 +226,8 @@ export default function App() {
               marginBottom: 8,
               borderRadius: 10,
               border: "1px solid #666",
+              background: "transparent",
+              color: "#eee",
               cursor: "pointer",
               opacity: activeTab === key ? 1 : 0.8,
             }}
@@ -207,17 +258,14 @@ export default function App() {
               <div style={{ fontSize: 12, opacity: 0.8 }}>World Name</div>
               <input
                 value={world.world.name}
-                onChange={(e) =>
-                  setWorld({
-                    ...world,
-                    world: { ...world.world, name: e.target.value },
-                  })
-                }
+                onChange={(e) => updateWorldInfo({ name: e.target.value })}
                 style={{
                   width: "100%",
                   padding: 10,
                   borderRadius: 6,
                   border: "1px solid #666",
+                  background: "#333",
+                  color: "#eee",
                 }}
               />
             </label>
@@ -226,61 +274,63 @@ export default function App() {
               <div style={{ fontSize: 12, opacity: 0.8 }}>Description</div>
               <textarea
                 value={world.world.description}
-                onChange={(e) =>
-                  setWorld({
-                    ...world,
-                    world: { ...world.world, description: e.target.value },
-                  })
-                }
-                rows={3}
+                onChange={(e) => updateWorldInfo({ description: e.target.value })}
+                rows={4}
                 style={{
                   width: "100%",
                   padding: 10,
                   borderRadius: 6,
                   border: "1px solid #666",
+                  background: "#333",
+                  color: "#eee",
                 }}
               />
             </label>
 
-            <button
-              onClick={() => downloadJson("world_export.json", syncedWorld)}
-              style={{
-                padding: "10px 14px",
-                borderRadius: 8,
-                border: "1px solid #666",
-                cursor: "pointer",
-              }}
-            >
-              <label
+            <div style={{ marginTop: 12 }}>
+              <button
+                onClick={() => downloadJson("world_export.json", syncedWorld)}
                 style={{
-                  display: "inline-block",
-                  marginLeft: 12,
                   padding: "10px 14px",
                   borderRadius: 8,
                   border: "1px solid #666",
+                  background: "transparent",
+                  color: "#eee",
                   cursor: "pointer",
                 }}
               >
-                Import JSON
-                <input
-                  type="file"
-                  accept="application/json"
-                  style={{ display: "none" }}
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (!file) return;
+                Export JSON
+              </button>
 
-                    importJsonFile(file, (data) => {
-                      setWorld(data as typeof world);
-                    });
-                  }}
-                />
-              </label>
-              Export JSON
-            </button>
-            <div style={{ marginTop: 12 }}>
-              <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 6 }}>
-                Import world JSON
+              {/* Import button that triggers hidden input */}
+              <button
+                onClick={() => importInputRef.current?.click()}
+                style={{
+                  padding: "10px 14px",
+                  borderRadius: 8,
+                  border: "1px solid #666",
+                  background: "transparent",
+                  color: "#eee",
+                  cursor: "pointer",
+                  marginLeft: 10,
+                }}
+              >
+                Import JSON
+              </button>
+
+              <input
+                ref={importInputRef}
+                type="file"
+                accept=".json,application/json"
+                style={{ display: "none" }}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) onImportFile(file);
+                }}
+              />
+
+              <div style={{ marginTop: 10, fontSize: 12, opacity: 0.7 }}>
+                Import replaces the current world state.
               </div>
             </div>
           </section>
@@ -288,53 +338,44 @@ export default function App() {
 
         {/* MAPS EDITOR */}
         {activeTab === "maps" && (
-          <section
-            style={{
-              marginTop: 16,
-              padding: 16,
-              border: "1px solid #444",
-              borderRadius: 8,
-            }}
-          >
+          <section style={{ marginTop: 16, padding: 16, border: "1px solid #444", borderRadius: 8 }}>
             <h2>Maps Editor</h2>
 
             <button
               onClick={addMap}
               style={{
-                marginBottom: 12,
                 padding: "10px 14px",
                 borderRadius: 8,
                 border: "1px solid #666",
+                background: "transparent",
+                color: "#eee",
                 cursor: "pointer",
+                marginBottom: 12,
               }}
             >
               + Add Map
             </button>
 
-            {world.maps.map((map, index) => (
+            {syncedWorld.maps.map((m) => (
               <div
-                key={map.id}
+                key={m.id}
                 style={{
-                  marginBottom: 12,
-                  padding: 12,
                   border: "1px solid #555",
                   borderRadius: 8,
+                  padding: 12,
+                  marginBottom: 12,
                 }}
               >
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                  }}
-                >
-                  <strong>{map.id}</strong>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div style={{ fontWeight: 700 }}>{m.id}</div>
                   <button
-                    onClick={() => deleteMap(map.id)}
+                    onClick={() => deleteMap(m.id)}
                     style={{
                       padding: "6px 10px",
                       borderRadius: 8,
                       border: "1px solid #666",
+                      background: "transparent",
+                      color: "#eee",
                       cursor: "pointer",
                     }}
                   >
@@ -342,27 +383,105 @@ export default function App() {
                   </button>
                 </div>
 
-                <div style={{ height: 10 }} />
-
-                <label style={{ display: "block", marginBottom: 6 }}>
-                  <div style={{ fontSize: 12 }}>Map Name</div>
+                <label style={{ display: "block", marginTop: 10 }}>
+                  <div style={{ fontSize: 12, opacity: 0.8 }}>Map Name</div>
                   <input
-                    value={map.name}
-                    onChange={(e) => updateMap(index, { name: e.target.value })}
-                    style={{ width: "100%", padding: 8 }}
+                    value={m.name}
+                    onChange={(e) => updateMap(m.id, { name: e.target.value })}
+                    style={{
+                      width: "100%",
+                      padding: 10,
+                      borderRadius: 6,
+                      border: "1px solid #666",
+                      background: "#333",
+                      color: "#eee",
+                    }}
                   />
                 </label>
 
-                <label style={{ display: "block" }}>
-                  <div style={{ fontSize: 12 }}>Description</div>
+                <label style={{ display: "block", marginTop: 10 }}>
+                  <div style={{ fontSize: 12, opacity: 0.8 }}>Description</div>
                   <input
-                    value={map.description}
-                    onChange={(e) =>
-                      updateMap(index, { description: e.target.value })
-                    }
-                    style={{ width: "100%", padding: 8 }}
+                    value={m.description}
+                    onChange={(e) => updateMap(m.id, { description: e.target.value })}
+                    style={{
+                      width: "100%",
+                      padding: 10,
+                      borderRadius: 6,
+                      border: "1px solid #666",
+                      background: "#333",
+                      color: "#eee",
+                    }}
                   />
                 </label>
+
+                <div style={{ marginTop: 10, display: "flex", gap: 10 }}>
+                  <label style={{ flex: 1 }}>
+                    <div style={{ fontSize: 12, opacity: 0.8 }}>Width</div>
+                    <input
+                      type="number"
+                      value={m.size?.width ?? 0}
+                      onChange={(e) =>
+                        updateMap(m.id, {
+                          size: { ...(m.size ?? { width: 0, height: 0, unit: "meters" }), width: Number(e.target.value) },
+                        })
+                      }
+                      style={{
+                        width: "100%",
+                        padding: 10,
+                        borderRadius: 6,
+                        border: "1px solid #666",
+                        background: "#333",
+                        color: "#eee",
+                      }}
+                    />
+                  </label>
+
+                  <label style={{ flex: 1 }}>
+                    <div style={{ fontSize: 12, opacity: 0.8 }}>Height</div>
+                    <input
+                      type="number"
+                      value={m.size?.height ?? 0}
+                      onChange={(e) =>
+                        updateMap(m.id, {
+                          size: { ...(m.size ?? { width: 0, height: 0, unit: "meters" }), height: Number(e.target.value) },
+                        })
+                      }
+                      style={{
+                        width: "100%",
+                        padding: 10,
+                        borderRadius: 6,
+                        border: "1px solid #666",
+                        background: "#333",
+                        color: "#eee",
+                      }}
+                    />
+                  </label>
+
+                  <label style={{ flex: 1 }}>
+                    <div style={{ fontSize: 12, opacity: 0.8 }}>Unit</div>
+                    <input
+                      value={m.size?.unit ?? "meters"}
+                      onChange={(e) =>
+                        updateMap(m.id, {
+                          size: { ...(m.size ?? { width: 0, height: 0, unit: "meters" }), unit: e.target.value },
+                        })
+                      }
+                      style={{
+                        width: "100%",
+                        padding: 10,
+                        borderRadius: 6,
+                        border: "1px solid #666",
+                        background: "#333",
+                        color: "#eee",
+                      }}
+                    />
+                  </label>
+                </div>
+
+                <div style={{ marginTop: 10, fontSize: 12, opacity: 0.8 }}>
+                  Locations assigned: {(m.locations ?? []).length}
+                </div>
               </div>
             ))}
           </section>
@@ -370,58 +489,44 @@ export default function App() {
 
         {/* LOCATIONS EDITOR */}
         {activeTab === "locations" && (
-          <section
-            style={{
-              marginTop: 16,
-              padding: 16,
-              border: "1px solid #444",
-              borderRadius: 8,
-            }}
-          >
+          <section style={{ marginTop: 16, padding: 16, border: "1px solid #444", borderRadius: 8 }}>
             <h2>Locations Editor</h2>
 
             <button
               onClick={addLocation}
-              disabled={world.maps.length === 0}
               style={{
-                marginBottom: 12,
                 padding: "10px 14px",
                 borderRadius: 8,
                 border: "1px solid #666",
-                cursor: world.maps.length === 0 ? "not-allowed" : "pointer",
-                opacity: world.maps.length === 0 ? 0.6 : 1,
+                background: "transparent",
+                color: "#eee",
+                cursor: "pointer",
+                marginBottom: 12,
               }}
-              title={
-                world.maps.length === 0 ? "Add a map first" : "Add a location"
-              }
             >
               + Add Location
             </button>
 
-            {world.locations.map((loc, index) => (
+            {syncedWorld.locations.map((loc, index) => (
               <div
                 key={loc.id}
                 style={{
-                  marginBottom: 12,
-                  padding: 12,
                   border: "1px solid #555",
                   borderRadius: 8,
+                  padding: 12,
+                  marginBottom: 12,
                 }}
               >
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                  }}
-                >
-                  <strong>{loc.id}</strong>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div style={{ fontWeight: 700 }}>{loc.id}</div>
                   <button
-                    onClick={() => deleteLocation(loc.id)}
+                    onClick={() => deleteLocation(index)}
                     style={{
                       padding: "6px 10px",
                       borderRadius: 8,
                       border: "1px solid #666",
+                      background: "transparent",
+                      color: "#eee",
                       cursor: "pointer",
                     }}
                   >
@@ -429,98 +534,124 @@ export default function App() {
                   </button>
                 </div>
 
-                <div style={{ height: 10 }} />
-
-                <label style={{ display: "block", marginBottom: 8 }}>
-                  <div style={{ fontSize: 12 }}>Location Name</div>
+                <label style={{ display: "block", marginTop: 10 }}>
+                  <div style={{ fontSize: 12, opacity: 0.8 }}>Location Name</div>
                   <input
                     value={loc.name}
-                    onChange={(e) =>
-                      updateLocation(index, { name: e.target.value })
-                    }
-                    style={{ width: "100%", padding: 8 }}
+                    onChange={(e) => updateLocation(index, { name: e.target.value })}
+                    style={{
+                      width: "100%",
+                      padding: 10,
+                      borderRadius: 6,
+                      border: "1px solid #666",
+                      background: "#333",
+                      color: "#eee",
+                    }}
                   />
                 </label>
 
-                <label style={{ display: "block", marginBottom: 8 }}>
-                  <div style={{ fontSize: 12 }}>Map</div>
+                <label style={{ display: "block", marginTop: 10 }}>
+                  <div style={{ fontSize: 12, opacity: 0.8 }}>Map</div>
                   <select
                     value={loc.mapId}
-                    onChange={(e) =>
-                      updateLocation(index, { mapId: e.target.value })
-                    }
-                    style={{ width: "100%", padding: 8 }}
+                    onChange={(e) => updateLocation(index, { mapId: e.target.value })}
+                    style={{
+                      width: "100%",
+                      padding: 10,
+                      borderRadius: 6,
+                      border: "1px solid #666",
+                      background: "#333",
+                      color: "#eee",
+                    }}
                   >
-                    {world.maps.map((m) => (
+                    {syncedWorld.maps.map((m) => (
                       <option key={m.id} value={m.id}>
                         {m.name} ({m.id})
                       </option>
                     ))}
+                    <option value="unassigned">Unassigned</option>
                   </select>
                 </label>
 
-                <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                <div style={{ marginTop: 10, display: "flex", gap: 10 }}>
                   <label style={{ flex: 1 }}>
-                    <div style={{ fontSize: 12 }}>X</div>
+                    <div style={{ fontSize: 12, opacity: 0.8 }}>X</div>
                     <input
                       type="number"
                       value={loc.position.x}
                       onChange={(e) =>
                         updateLocation(index, {
-                          position: {
-                            ...loc.position,
-                            x: Number(e.target.value),
-                          },
+                          position: { ...loc.position, x: Number(e.target.value) },
                         })
                       }
-                      style={{ width: "100%", padding: 8 }}
+                      style={{
+                        width: "100%",
+                        padding: 10,
+                        borderRadius: 6,
+                        border: "1px solid #666",
+                        background: "#333",
+                        color: "#eee",
+                      }}
                     />
                   </label>
 
                   <label style={{ flex: 1 }}>
-                    <div style={{ fontSize: 12 }}>Y</div>
+                    <div style={{ fontSize: 12, opacity: 0.8 }}>Y</div>
                     <input
                       type="number"
                       value={loc.position.y}
                       onChange={(e) =>
                         updateLocation(index, {
-                          position: {
-                            ...loc.position,
-                            y: Number(e.target.value),
-                          },
+                          position: { ...loc.position, y: Number(e.target.value) },
                         })
                       }
-                      style={{ width: "100%", padding: 8 }}
+                      style={{
+                        width: "100%",
+                        padding: 10,
+                        borderRadius: 6,
+                        border: "1px solid #666",
+                        background: "#333",
+                        color: "#eee",
+                      }}
                     />
                   </label>
 
                   <label style={{ flex: 1 }}>
-                    <div style={{ fontSize: 12 }}>Z</div>
+                    <div style={{ fontSize: 12, opacity: 0.8 }}>Z</div>
                     <input
                       type="number"
                       value={loc.position.z}
                       onChange={(e) =>
                         updateLocation(index, {
-                          position: {
-                            ...loc.position,
-                            z: Number(e.target.value),
-                          },
+                          position: { ...loc.position, z: Number(e.target.value) },
                         })
                       }
-                      style={{ width: "100%", padding: 8 }}
+                      style={{
+                        width: "100%",
+                        padding: 10,
+                        borderRadius: 6,
+                        border: "1px solid #666",
+                        background: "#333",
+                        color: "#eee",
+                      }}
                     />
                   </label>
                 </div>
 
-                <label style={{ display: "block" }}>
-                  <div style={{ fontSize: 12 }}>Radius</div>
+                <label style={{ display: "block", marginTop: 10 }}>
+                  <div style={{ fontSize: 12, opacity: 0.8 }}>Radius</div>
                   <input
                     type="number"
                     value={loc.radius}
-                    onChange={(e) =>
-                      updateLocation(index, { radius: Number(e.target.value) })
-                    }
-                    style={{ width: "100%", padding: 8 }}
+                    onChange={(e) => updateLocation(index, { radius: Number(e.target.value) })}
+                    style={{
+                      width: "100%",
+                      padding: 10,
+                      borderRadius: 6,
+                      border: "1px solid #666",
+                      background: "#333",
+                      color: "#eee",
+                    }}
                   />
                 </label>
               </div>
@@ -530,40 +661,58 @@ export default function App() {
 
         {/* PREVIEW */}
         {activeTab === "preview" && (
-          <section
-            style={{
-              marginTop: 16,
-              padding: 16,
-              border: "1px solid #444",
-              borderRadius: 8,
-            }}
-          >
+          <section style={{ marginTop: 16, padding: 16, border: "1px solid #444", borderRadius: 8 }}>
             <h2>Preview</h2>
 
-            <h3 style={{ marginBottom: 4 }}>{world.world.name}</h3>
-            <p style={{ marginTop: 0, opacity: 0.9 }}>
-              {world.world.description}
-            </p>
+            <div style={{ marginTop: 12, padding: 12, border: "1px solid #555", borderRadius: 8 }}>
+              <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 6 }}>World</div>
+              <div style={{ fontSize: 18, fontWeight: 600 }}>{syncedWorld.world.name}</div>
+              <div style={{ marginTop: 6, opacity: 0.9 }}>{syncedWorld.world.description}</div>
+            </div>
 
-            <h3>Maps</h3>
-            <ul>
-              {syncedWorld.maps.map((m) => (
-                <li key={m.id}>
-                  <strong>{m.name}</strong> — {m.description} (locs:{" "}
-                  {m.locations.length})
-                </li>
-              ))}
-            </ul>
+            <div style={{ marginTop: 16 }}>
+              <h3 style={{ marginBottom: 8 }}>Maps</h3>
 
-            <h3>Locations</h3>
-            <ul>
-              {world.locations.map((l) => (
-                <li key={l.id}>
-                  {l.name} @ ({l.position.x}, {l.position.y}, {l.position.z}) —
-                  map: {l.mapId}
-                </li>
-              ))}
-            </ul>
+              <ul style={{ margin: 0, paddingLeft: 18 }}>
+                {syncedWorld.maps.map((m) => {
+                  const locs = (m.locations ?? [])
+                    .map((id) => locationById.get(id))
+                    .filter((x): x is NonNullable<typeof x> => Boolean(x));
+
+                  return (
+                    <li key={m.id} style={{ marginBottom: 10 }}>
+                      <div>
+                        <strong>{m.name}</strong> — {m.description} (locs: {locs.length})
+                      </div>
+
+                      {locs.length > 0 ? (
+                        <ul style={{ marginTop: 6, paddingLeft: 18, opacity: 0.9 }}>
+                          {locs.map((l) => (
+                            <li key={l.id}>
+                              {l.name} @ ({l.position.x}, {l.position.y}, {l.position.z})
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <div style={{ marginTop: 6, opacity: 0.7 }}>No locations assigned yet</div>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+
+            <div style={{ marginTop: 16 }}>
+              <h3>Locations</h3>
+              <ul style={{ margin: 0, paddingLeft: 18 }}>
+                {syncedWorld.locations.map((l) => (
+                  <li key={l.id}>
+                    {l.name} @ ({l.position.x}, {l.position.y}, {l.position.z}) — map: {l.mapId}{" "}
+                    {mapsById.has(l.mapId) ? "" : "(unassigned)"}
+                  </li>
+                ))}
+              </ul>
+            </div>
           </section>
         )}
       </main>
