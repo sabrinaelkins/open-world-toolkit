@@ -1,9 +1,8 @@
 import { useMemo, useRef, useState } from "react";
 import worldData from "./data/world_example.json";
-import type { GameWorldFile, MapData, Location } from "./types/worldTypes";
+import type { GameWorldFile, Location, MapData } from "./types/worldTypes";
 
 // helpers: import/export
-
 function downloadJson(filename: string, data: unknown) {
   const blob = new Blob([JSON.stringify(data, null, 2)], {
     type: "application/json",
@@ -23,9 +22,10 @@ function safeParseJson(text: string) {
 }
 
 type TabKey = "world" | "maps" | "locations" | "preview";
+type Issue = { level: "error" | "warning"; message: string };
 
 export default function App() {
-  // Ensure we start from a deep copy (avoid mutating imported JSON)
+  // Start from a deep copy so we don't mutate imported JSON
   const initialWorld = useMemo(() => {
     try {
       return structuredClone(worldData as GameWorldFile);
@@ -56,14 +56,76 @@ export default function App() {
     return { ...world, maps };
   }, [world]);
 
-  // Lookup helpers used by Preview + UI
-  const mapsById = useMemo(() => {
-    return new Map(syncedWorld.maps.map((m) => [m.id, m] as const));
-  }, [syncedWorld.maps]);
-
+  // Lookup helper: location id -> Location
   const locationById = useMemo(() => {
     return new Map(syncedWorld.locations.map((l) => [l.id, l] as const));
   }, [syncedWorld.locations]);
+
+
+  // Validation (Preview Issues)
+
+  const previewIssues = useMemo(() => {
+    const issues: Issue[] = [];
+
+    const mapIds = new Set(syncedWorld.maps.map((m) => m.id));
+    const locationIds = new Set(syncedWorld.locations.map((l) => l.id));
+
+    // ERRORS: location points to a map that doesn't exist
+    for (const l of syncedWorld.locations) {
+      if (l.mapId !== "unassigned" && !mapIds.has(l.mapId)) {
+        issues.push({
+          level: "error",
+          message: `Location "${l.id}" points to missing mapId "${l.mapId}"`,
+        });
+      }
+    }
+
+    // ERRORS: map references a locationId that doesn't exist
+    for (const m of syncedWorld.maps) {
+      for (const locId of m.locations ?? []) {
+        if (!locationIds.has(locId)) {
+          issues.push({
+            level: "error",
+            message: `Map "${m.id}" references missing locationId "${locId}"`,
+          });
+        }
+      }
+    }
+
+    // WARNINGS: missing tags
+    for (const l of syncedWorld.locations) {
+      if (!l.tags || l.tags.length === 0) {
+        issues.push({
+          level: "warning",
+          message: `Location "${l.id}" has no tags`,
+        });
+      }
+    }
+
+    // WARNINGS: unassigned mapId (allowed, but often a mistake)
+    for (const l of syncedWorld.locations) {
+      if (l.mapId === "unassigned") {
+        issues.push({
+          level: "warning",
+          message: `Location "${l.id}" is unassigned to a map`,
+        });
+      }
+    }
+
+    return issues;
+  }, [syncedWorld]);
+
+  const errorIssues = useMemo(
+    () => previewIssues.filter((i) => i.level === "error"),
+    [previewIssues]
+  );
+
+  const warningIssues = useMemo(
+    () => previewIssues.filter((i) => i.level === "warning"),
+    [previewIssues]
+  );
+
+  const hasErrors = errorIssues.length > 0;
 
   // World editor
 
@@ -86,7 +148,7 @@ export default function App() {
         name: "New Map",
         description: "Describe this region...",
         size: { width: 2000, height: 2000, unit: "meters" },
-        locations: [], // derived anyway, but ok to include
+        locations: [],
       };
 
       return { ...prev, maps: [...prev.maps, newMap] };
@@ -103,12 +165,16 @@ export default function App() {
   function deleteMap(mapId: string) {
     setWorld((prev) => {
       const maps = prev.maps.filter((m) => m.id !== mapId);
+
+      // Any locations assigned to this map become unassigned
       const locations = prev.locations.map((l) =>
         l.mapId === mapId ? { ...l, mapId: "unassigned" } : l
       );
+
       return { ...prev, maps, locations };
     });
   }
+
 
   // Locations editor
 
@@ -146,6 +212,7 @@ export default function App() {
     });
   }
 
+ 
   // Import JSON
 
   async function onImportFile(file: File) {
@@ -216,7 +283,7 @@ export default function App() {
       <main style={{ flex: 1, padding: 24, maxWidth: 1000 }}>
         <h1 style={{ marginTop: 0 }}>Open World Toolkit (Editor)</h1>
 
-        {/* WORLD EDITOR */}
+        {/* WORLD */}
         {activeTab === "world" && (
           <section
             style={{
@@ -265,14 +332,22 @@ export default function App() {
 
             <div style={{ marginTop: 12 }}>
               <button
-                onClick={() => downloadJson("world_export.json", syncedWorld)}
+                disabled={hasErrors}
+                onClick={() => {
+                  if (hasErrors) {
+                    alert("Fix errors before exporting.");
+                    return;
+                  }
+                  downloadJson("world_export.json", syncedWorld);
+                }}
                 style={{
                   padding: "10px 14px",
                   borderRadius: 8,
-                  border: "1px solid #666",
+                  border: `1px solid ${hasErrors ? "#555" : "#666"}`,
                   background: "transparent",
-                  color: "#eee",
-                  cursor: "pointer",
+                  color: hasErrors ? "#777" : "#eee",
+                  cursor: hasErrors ? "not-allowed" : "pointer",
+                  opacity: hasErrors ? 0.6 : 1,
                 }}
               >
                 Export JSON
@@ -307,11 +382,18 @@ export default function App() {
               <div style={{ marginTop: 10, fontSize: 12, opacity: 0.7 }}>
                 Import replaces the current world state.
               </div>
+
+              {(errorIssues.length > 0 || warningIssues.length > 0) && (
+                <div style={{ marginTop: 12, fontSize: 12, opacity: 0.9 }}>
+                  Validation: {errorIssues.length} error(s),{" "}
+                  {warningIssues.length} warning(s)
+                </div>
+              )}
             </div>
           </section>
         )}
 
-        {/* MAPS EDITOR */}
+        {/* MAPS */}
         {activeTab === "maps" && (
           <section
             style={{
@@ -498,7 +580,7 @@ export default function App() {
           </section>
         )}
 
-        {/* LOCATIONS EDITOR */}
+        {/* LOCATIONS */}
         {activeTab === "locations" && (
           <section
             style={{
@@ -611,10 +693,7 @@ export default function App() {
                       value={loc.position.x}
                       onChange={(e) =>
                         updateLocation(index, {
-                          position: {
-                            ...loc.position,
-                            x: Number(e.target.value),
-                          },
+                          position: { ...loc.position, x: Number(e.target.value) },
                         })
                       }
                       style={{
@@ -635,10 +714,7 @@ export default function App() {
                       value={loc.position.y}
                       onChange={(e) =>
                         updateLocation(index, {
-                          position: {
-                            ...loc.position,
-                            y: Number(e.target.value),
-                          },
+                          position: { ...loc.position, y: Number(e.target.value) },
                         })
                       }
                       style={{
@@ -659,10 +735,7 @@ export default function App() {
                       value={loc.position.z}
                       onChange={(e) =>
                         updateLocation(index, {
-                          position: {
-                            ...loc.position,
-                            z: Number(e.target.value),
-                          },
+                          position: { ...loc.position, z: Number(e.target.value) },
                         })
                       }
                       style={{
@@ -712,6 +785,53 @@ export default function App() {
           >
             <h2>Preview</h2>
 
+            {(errorIssues.length > 0 || warningIssues.length > 0) && (
+              <div style={{ marginTop: 12 }}>
+                {errorIssues.length > 0 && (
+                  <div
+                    style={{
+                      padding: 12,
+                      border: "1px solid #ff4d4d",
+                      borderRadius: 8,
+                      marginBottom: 10,
+                    }}
+                  >
+                    <div style={{ fontWeight: 700, marginBottom: 6 }}>
+                      Errors
+                    </div>
+                    <ul style={{ margin: 0, paddingLeft: 18 }}>
+                      {errorIssues.map((e, idx) => (
+                        <li key={idx} style={{ opacity: 0.95 }}>
+                          {e.message}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {warningIssues.length > 0 && (
+                  <div
+                    style={{
+                      padding: 12,
+                      border: "1px solid #ffb020",
+                      borderRadius: 8,
+                    }}
+                  >
+                    <div style={{ fontWeight: 700, marginBottom: 6 }}>
+                      Warnings
+                    </div>
+                    <ul style={{ margin: 0, paddingLeft: 18 }}>
+                      {warningIssues.map((w, idx) => (
+                        <li key={idx} style={{ opacity: 0.95 }}>
+                          {w.message}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+
             <div
               style={{
                 marginTop: 12,
@@ -758,7 +878,7 @@ export default function App() {
                           {locs.map((l) => (
                             <li key={l.id}>
                               {l.name} @ ({l.position.x}, {l.position.y},{" "}
-                              {l.position.z}){" — "}radius {l.radius}
+                              {l.position.z}) — radius {l.radius}
                             </li>
                           ))}
                         </ul>
@@ -775,12 +895,11 @@ export default function App() {
 
             <div style={{ marginTop: 16 }}>
               <h3>All Locations</h3>
-
               <ul style={{ margin: 0, paddingLeft: 18 }}>
                 {syncedWorld.locations.map((l) => (
                   <li key={l.id}>
                     {l.name} @ ({l.position.x}, {l.position.y}, {l.position.z})
-                    {" — "}map: {l.mapId}
+                    — map: {l.mapId}
                   </li>
                 ))}
               </ul>
