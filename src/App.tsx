@@ -2,9 +2,8 @@ import { useMemo, useRef, useState } from "react";
 import worldData from "./data/world_example.json";
 import type { GameWorldFile, MapData, Location } from "./types/worldTypes";
 
-// ----------------------
 // helpers: import/export
-// ----------------------
+
 function downloadJson(filename: string, data: unknown) {
   const blob = new Blob([JSON.stringify(data, null, 2)], {
     type: "application/json",
@@ -66,9 +65,8 @@ export default function App() {
     return new Map(syncedWorld.locations.map((l) => [l.id, l] as const));
   }, [syncedWorld.locations]);
 
-  // ----------------------
   // World editor
-  // ----------------------
+
   function updateWorldInfo(patch: Partial<GameWorldFile["world"]>) {
     setWorld((prev) => ({
       ...prev,
@@ -76,9 +74,8 @@ export default function App() {
     }));
   }
 
-  // ----------------------
   // Maps editor
-  // ----------------------
+
   function addMap() {
     setWorld((prev) => {
       const nextNumber = prev.maps.length + 1;
@@ -113,9 +110,8 @@ export default function App() {
     });
   }
 
-  // ----------------------
   // Locations editor
-  // ----------------------
+
   function addLocation() {
     setWorld((prev) => {
       const nextNumber = prev.locations.length + 1;
@@ -127,7 +123,7 @@ export default function App() {
         mapId: prev.maps[0]?.id ?? "unassigned",
         position: { x: 0, y: 0, z: 0 },
         radius: 5,
-        tags:[]
+        tags: [],
       };
 
       return { ...prev, locations: [...prev.locations, newLoc] };
@@ -150,9 +146,8 @@ export default function App() {
     });
   }
 
-  // ----------------------
   // Import JSON
-  // ----------------------
+
   async function onImportFile(file: File) {
     try {
       const text = await file.text();
@@ -253,7 +248,9 @@ export default function App() {
               <div style={{ fontSize: 12, opacity: 0.8 }}>Description</div>
               <textarea
                 value={world.world.description}
-                onChange={(e) => updateWorldInfo({ description: e.target.value })}
+                onChange={(e) =>
+                  updateWorldInfo({ description: e.target.value })
+                }
                 rows={4}
                 style={{
                   width: "100%",
@@ -316,7 +313,14 @@ export default function App() {
 
         {/* MAPS EDITOR */}
         {activeTab === "maps" && (
-          <section style={{ marginTop: 16, padding: 16, border: "1px solid #444", borderRadius: 8 }}>
+          <section
+            style={{
+              marginTop: 16,
+              padding: 16,
+              border: "1px solid #444",
+              borderRadius: 8,
+            }}
+          >
             <h2>Maps Editor</h2>
 
             <button
@@ -344,7 +348,13 @@ export default function App() {
                   marginBottom: 12,
                 }}
               >
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                  }}
+                >
                   <div style={{ fontWeight: 700 }}>{m.id}</div>
                   <button
                     onClick={() => deleteMap(m.id)}
@@ -381,7 +391,9 @@ export default function App() {
                   <div style={{ fontSize: 12, opacity: 0.8 }}>Description</div>
                   <input
                     value={m.description}
-                    onChange={(e) => updateMap(m.id, { description: e.target.value })}
+                    onChange={(e) =>
+                      updateMap(m.id, { description: e.target.value })
+                    }
                     style={{
                       width: "100%",
                       padding: 10,
@@ -402,7 +414,11 @@ export default function App() {
                       onChange={(e) =>
                         updateMap(m.id, {
                           size: {
-                            ...(m.size ?? { width: 0, height: 0, unit: "meters" }),
+                            ...(m.size ?? {
+                              width: 0,
+                              height: 0,
+                              unit: "meters",
+                            }),
                             width: Number(e.target.value),
                           },
                         })
@@ -426,7 +442,11 @@ export default function App() {
                       onChange={(e) =>
                         updateMap(m.id, {
                           size: {
-                            ...(m.size ?? { width: 0, height: 0, unit: "meters" }),
+                            ...(m.size ?? {
+                              width: 0,
+                              height: 0,
+                              unit: "meters",
+                            }),
                             height: Number(e.target.value),
                           },
                         })
@@ -449,7 +469,11 @@ export default function App() {
                       onChange={(e) =>
                         updateMap(m.id, {
                           size: {
-                            ...(m.size ?? { width: 0, height: 0, unit: "meters" }),
+                            ...(m.size ?? {
+                              width: 0,
+                              height: 0,
+                              unit: "meters",
+                            }),
                             unit: e.target.value,
                           },
                         })
@@ -476,7 +500,14 @@ export default function App() {
 
         {/* LOCATIONS EDITOR */}
         {activeTab === "locations" && (
-          <section style={{ marginTop: 16, padding: 16, border: "1px solid #444", borderRadius: 8 }}>
+          <section
+            style={{
+              marginTop: 16,
+              padding: 16,
+              border: "1px solid #444",
+              borderRadius: 8,
+            }}
+          >
             <h2>Locations Editor</h2>
 
             <button
@@ -504,7 +535,13 @@ export default function App() {
                   marginBottom: 12,
                 }}
               >
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                  }}
+                >
                   <div style={{ fontWeight: 700 }}>{loc.id}</div>
                   <button
                     onClick={() => deleteLocation(index)}
@@ -522,10 +559,14 @@ export default function App() {
                 </div>
 
                 <label style={{ display: "block", marginTop: 10 }}>
-                  <div style={{ fontSize: 12, opacity: 0.8 }}>Location Name</div>
+                  <div style={{ fontSize: 12, opacity: 0.8 }}>
+                    Location Name
+                  </div>
                   <input
                     value={loc.name}
-                    onChange={(e) => updateLocation(index, { name: e.target.value })}
+                    onChange={(e) =>
+                      updateLocation(index, { name: e.target.value })
+                    }
                     style={{
                       width: "100%",
                       padding: 10,
@@ -541,7 +582,9 @@ export default function App() {
                   <div style={{ fontSize: 12, opacity: 0.8 }}>Map</div>
                   <select
                     value={loc.mapId}
-                    onChange={(e) => updateLocation(index, { mapId: e.target.value })}
+                    onChange={(e) =>
+                      updateLocation(index, { mapId: e.target.value })
+                    }
                     style={{
                       width: "100%",
                       padding: 10,
@@ -568,7 +611,10 @@ export default function App() {
                       value={loc.position.x}
                       onChange={(e) =>
                         updateLocation(index, {
-                          position: { ...loc.position, x: Number(e.target.value) },
+                          position: {
+                            ...loc.position,
+                            x: Number(e.target.value),
+                          },
                         })
                       }
                       style={{
@@ -589,7 +635,10 @@ export default function App() {
                       value={loc.position.y}
                       onChange={(e) =>
                         updateLocation(index, {
-                          position: { ...loc.position, y: Number(e.target.value) },
+                          position: {
+                            ...loc.position,
+                            y: Number(e.target.value),
+                          },
                         })
                       }
                       style={{
@@ -610,7 +659,10 @@ export default function App() {
                       value={loc.position.z}
                       onChange={(e) =>
                         updateLocation(index, {
-                          position: { ...loc.position, z: Number(e.target.value) },
+                          position: {
+                            ...loc.position,
+                            z: Number(e.target.value),
+                          },
                         })
                       }
                       style={{
@@ -630,7 +682,9 @@ export default function App() {
                   <input
                     type="number"
                     value={loc.radius}
-                    onChange={(e) => updateLocation(index, { radius: Number(e.target.value) })}
+                    onChange={(e) =>
+                      updateLocation(index, { radius: Number(e.target.value) })
+                    }
                     style={{
                       width: "100%",
                       padding: 10,
@@ -648,13 +702,33 @@ export default function App() {
 
         {/* PREVIEW */}
         {activeTab === "preview" && (
-          <section style={{ marginTop: 16, padding: 16, border: "1px solid #444", borderRadius: 8 }}>
+          <section
+            style={{
+              marginTop: 16,
+              padding: 16,
+              border: "1px solid #444",
+              borderRadius: 8,
+            }}
+          >
             <h2>Preview</h2>
 
-            <div style={{ marginTop: 12, padding: 12, border: "1px solid #555", borderRadius: 8 }}>
-              <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 6 }}>World</div>
-              <div style={{ fontSize: 18, fontWeight: 600 }}>{syncedWorld.world.name}</div>
-              <div style={{ marginTop: 6, opacity: 0.9 }}>{syncedWorld.world.description}</div>
+            <div
+              style={{
+                marginTop: 12,
+                padding: 12,
+                border: "1px solid #555",
+                borderRadius: 8,
+              }}
+            >
+              <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 6 }}>
+                World
+              </div>
+              <div style={{ fontSize: 18, fontWeight: 600 }}>
+                {syncedWorld.world.name}
+              </div>
+              <div style={{ marginTop: 6, opacity: 0.9 }}>
+                {syncedWorld.world.description}
+              </div>
             </div>
 
             <div style={{ marginTop: 16 }}>
@@ -669,19 +743,29 @@ export default function App() {
                   return (
                     <li key={m.id} style={{ marginBottom: 10 }}>
                       <div>
-                        <strong>{m.name}</strong> — {m.description} (locs: {locs.length})
+                        <strong>{m.name}</strong> — {m.description} (locs:{" "}
+                        {locs.length})
                       </div>
 
                       {locs.length > 0 ? (
-                        <ul style={{ marginTop: 6, paddingLeft: 18, opacity: 0.9 }}>
+                        <ul
+                          style={{
+                            marginTop: 6,
+                            paddingLeft: 18,
+                            opacity: 0.9,
+                          }}
+                        >
                           {locs.map((l) => (
                             <li key={l.id}>
-                              {l.name} @ ({l.position.x}, {l.position.y}, {l.position.z})
+                              {l.name} @ ({l.position.x}, {l.position.y},{" "}
+                              {l.position.z}){" — "}radius {l.radius}
                             </li>
                           ))}
                         </ul>
                       ) : (
-                        <div style={{ marginTop: 6, opacity: 0.7 }}>No locations assigned yet</div>
+                        <div style={{ marginTop: 6, opacity: 0.7 }}>
+                          No locations assigned yet
+                        </div>
                       )}
                     </li>
                   );
@@ -690,12 +774,13 @@ export default function App() {
             </div>
 
             <div style={{ marginTop: 16 }}>
-              <h3>Locations</h3>
+              <h3>All Locations</h3>
+
               <ul style={{ margin: 0, paddingLeft: 18 }}>
                 {syncedWorld.locations.map((l) => (
                   <li key={l.id}>
-                    {l.name} @ ({l.position.x}, {l.position.y}, {l.position.z}) — map: {l.mapId}{" "}
-                    {mapsById.has(l.mapId) ? "" : "(unassigned)"}
+                    {l.name} @ ({l.position.x}, {l.position.y}, {l.position.z})
+                    {" — "}map: {l.mapId}
                   </li>
                 ))}
               </ul>
