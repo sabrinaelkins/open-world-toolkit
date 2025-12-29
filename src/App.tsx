@@ -1,12 +1,14 @@
 import { useMemo, useRef, useState } from "react";
 import worldData from "./data/world_example.json";
-import type { GameWorldFile, MapData, LocationData } from "./types/worldTypes";
+import type { GameWorldFile, MapData, Location } from "./types/worldTypes";
 
 // ----------------------
 // helpers: import/export
 // ----------------------
 function downloadJson(filename: string, data: unknown) {
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+  const blob = new Blob([JSON.stringify(data, null, 2)], {
+    type: "application/json",
+  });
   const url = URL.createObjectURL(blob);
 
   const a = document.createElement("a");
@@ -24,7 +26,7 @@ function safeParseJson(text: string) {
 type TabKey = "world" | "maps" | "locations" | "preview";
 
 export default function App() {
-  // Ensure we start from a deep copy
+  // Ensure we start from a deep copy (avoid mutating imported JSON)
   const initialWorld = useMemo(() => {
     try {
       return structuredClone(worldData as GameWorldFile);
@@ -35,12 +37,9 @@ export default function App() {
 
   const [world, setWorld] = useState<GameWorldFile>(initialWorld);
   const [activeTab, setActiveTab] = useState<TabKey>("world");
-
   const importInputRef = useRef<HTMLInputElement | null>(null);
 
-  // ----------------------------------------------------------------
-  // Keep map.locations derived from world.locations (single source)
-  // ----------------------------------------------------------------
+  // Keep map.locations derived from world.locations (single source of truth)
   const syncedWorld: GameWorldFile = useMemo(() => {
     const mapIdToLocIds = new Map<string, string[]>();
 
@@ -58,28 +57,13 @@ export default function App() {
     return { ...world, maps };
   }, [world]);
 
-  // ----------------------
-  // Lookup helpers
-  // ----------------------
+  // Lookup helpers used by Preview + UI
   const mapsById = useMemo(() => {
     return new Map(syncedWorld.maps.map((m) => [m.id, m] as const));
   }, [syncedWorld.maps]);
 
   const locationById = useMemo(() => {
     return new Map(syncedWorld.locations.map((l) => [l.id, l] as const));
-  }, [syncedWorld.locations]);
-
-  const locationsByMapId = useMemo(() => {
-    const acc: Record<string, LocationData[]> = {};
-    for (const loc of syncedWorld.locations) {
-      const key = loc.mapId || "unassigned";
-      (acc[key] ||= []).push(loc);
-    }
-    // sort each group by id (optional)
-    for (const key of Object.keys(acc)) {
-      acc[key].sort((a, b) => a.id.localeCompare(b.id));
-    }
-    return acc;
   }, [syncedWorld.locations]);
 
   // ----------------------
@@ -105,7 +89,7 @@ export default function App() {
         name: "New Map",
         description: "Describe this region...",
         size: { width: 2000, height: 2000, unit: "meters" },
-        locations: [], // will be synced by useMemo anyway
+        locations: [], // derived anyway, but ok to include
       };
 
       return { ...prev, maps: [...prev.maps, newMap] };
@@ -121,14 +105,10 @@ export default function App() {
 
   function deleteMap(mapId: string) {
     setWorld((prev) => {
-      // remove map
       const maps = prev.maps.filter((m) => m.id !== mapId);
-
-      // any locations that were assigned to this map become unassigned
       const locations = prev.locations.map((l) =>
         l.mapId === mapId ? { ...l, mapId: "unassigned" } : l
       );
-
       return { ...prev, maps, locations };
     });
   }
@@ -141,19 +121,20 @@ export default function App() {
       const nextNumber = prev.locations.length + 1;
       const newLocId = `loc_${String(nextNumber).padStart(3, "0")}`;
 
-      const newLoc: LocationData = {
+      const newLoc: Location = {
         id: newLocId,
         name: "New Location",
         mapId: prev.maps[0]?.id ?? "unassigned",
         position: { x: 0, y: 0, z: 0 },
         radius: 5,
+        tags:[]
       };
 
       return { ...prev, locations: [...prev.locations, newLoc] };
     });
   }
 
-  function updateLocation(index: number, patch: Partial<LocationData>) {
+  function updateLocation(index: number, patch: Partial<Location>) {
     setWorld((prev) => {
       const locations = prev.locations.slice();
       locations[index] = { ...locations[index], ...patch };
@@ -176,8 +157,6 @@ export default function App() {
     try {
       const text = await file.text();
       const parsed = safeParseJson(text);
-
-      // Trusting it matches GameWorldFile structure:
       setWorld(parsed as GameWorldFile);
       alert("Imported ✅");
     } catch {
@@ -302,7 +281,6 @@ export default function App() {
                 Export JSON
               </button>
 
-              {/* Import button that triggers hidden input */}
               <button
                 onClick={() => importInputRef.current?.click()}
                 style={{
@@ -423,7 +401,10 @@ export default function App() {
                       value={m.size?.width ?? 0}
                       onChange={(e) =>
                         updateMap(m.id, {
-                          size: { ...(m.size ?? { width: 0, height: 0, unit: "meters" }), width: Number(e.target.value) },
+                          size: {
+                            ...(m.size ?? { width: 0, height: 0, unit: "meters" }),
+                            width: Number(e.target.value),
+                          },
                         })
                       }
                       style={{
@@ -444,7 +425,10 @@ export default function App() {
                       value={m.size?.height ?? 0}
                       onChange={(e) =>
                         updateMap(m.id, {
-                          size: { ...(m.size ?? { width: 0, height: 0, unit: "meters" }), height: Number(e.target.value) },
+                          size: {
+                            ...(m.size ?? { width: 0, height: 0, unit: "meters" }),
+                            height: Number(e.target.value),
+                          },
                         })
                       }
                       style={{
@@ -464,7 +448,10 @@ export default function App() {
                       value={m.size?.unit ?? "meters"}
                       onChange={(e) =>
                         updateMap(m.id, {
-                          size: { ...(m.size ?? { width: 0, height: 0, unit: "meters" }), unit: e.target.value },
+                          size: {
+                            ...(m.size ?? { width: 0, height: 0, unit: "meters" }),
+                            unit: e.target.value,
+                          },
                         })
                       }
                       style={{
