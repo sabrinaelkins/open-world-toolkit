@@ -1,8 +1,14 @@
 import { useMemo, useRef, useState } from "react";
 import worldData from "./data/world_example.json";
-import type { GameWorldFile, Location, MapData } from "./types/worldTypes";
+import type {
+  GameWorldFile,
+  MapData,
+  Location as WorldLocation,
+} from "./types/worldTypes";
 
+// ------------------------------
 // helpers: import/export
+// ------------------------------
 function downloadJson(filename: string, data: unknown) {
   const blob = new Blob([JSON.stringify(data, null, 2)], {
     type: "application/json",
@@ -24,6 +30,9 @@ function safeParseJson(text: string) {
 type TabKey = "world" | "maps" | "locations" | "preview";
 type Issue = { level: "error" | "warning"; message: string };
 
+// ------------------------------
+// APP
+// ------------------------------
 export default function App() {
   // Start from a deep copy so we don't mutate imported JSON
   const initialWorld = useMemo(() => {
@@ -38,7 +47,14 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<TabKey>("world");
   const importInputRef = useRef<HTMLInputElement | null>(null);
 
+  // Tag drafts (each location remembers what you're typing)
+  const [tagDraftByLocId, setTagDraftByLocId] = useState<
+    Record<string, string>
+  >({});
+
+  // ------------------------------
   // Keep map.locations derived from world.locations (single source of truth)
+  // ------------------------------
   const syncedWorld: GameWorldFile = useMemo(() => {
     const mapIdToLocIds = new Map<string, string[]>();
 
@@ -61,9 +77,9 @@ export default function App() {
     return new Map(syncedWorld.locations.map((l) => [l.id, l] as const));
   }, [syncedWorld.locations]);
 
-
+  // ------------------------------
   // Validation (Preview Issues)
-
+  // ------------------------------
   const previewIssues = useMemo(() => {
     const issues: Issue[] = [];
 
@@ -127,8 +143,9 @@ export default function App() {
 
   const hasErrors = errorIssues.length > 0;
 
+  // ------------------------------
   // World editor
-
+  // ------------------------------
   function updateWorldInfo(patch: Partial<GameWorldFile["world"]>) {
     setWorld((prev) => ({
       ...prev,
@@ -136,8 +153,9 @@ export default function App() {
     }));
   }
 
+  // ------------------------------
   // Maps editor
-
+  // ------------------------------
   function addMap() {
     setWorld((prev) => {
       const nextNumber = prev.maps.length + 1;
@@ -175,15 +193,15 @@ export default function App() {
     });
   }
 
-
-  // Locations editor
-
+  // ------------------------------
+  // Locations editor (ID-based to avoid index bugs)
+  // ------------------------------
   function addLocation() {
     setWorld((prev) => {
       const nextNumber = prev.locations.length + 1;
       const newLocId = `loc_${String(nextNumber).padStart(3, "0")}`;
 
-      const newLoc: Location = {
+      const newLoc: WorldLocation = {
         id: newLocId,
         name: "New Location",
         mapId: prev.maps[0]?.id ?? "unassigned",
@@ -196,25 +214,58 @@ export default function App() {
     });
   }
 
-  function updateLocation(index: number, patch: Partial<Location>) {
-    setWorld((prev) => {
-      const locations = prev.locations.slice();
-      locations[index] = { ...locations[index], ...patch };
-      return { ...prev, locations };
+  function updateLocationById(locId: string, patch: Partial<WorldLocation>) {
+    setWorld((prev) => ({
+      ...prev,
+      locations: prev.locations.map((l) =>
+        l.id === locId ? { ...l, ...patch } : l
+      ),
+    }));
+  }
+
+  function deleteLocationById(locId: string) {
+    setWorld((prev) => ({
+      ...prev,
+      locations: prev.locations.filter((l) => l.id !== locId),
+    }));
+
+    // also clear any draft text for that location
+    setTagDraftByLocId((prev) => {
+      const next = { ...prev };
+      delete next[locId];
+      return next;
     });
   }
 
-  function deleteLocation(index: number) {
-    setWorld((prev) => {
-      const locations = prev.locations.slice();
-      locations.splice(index, 1);
-      return { ...prev, locations };
-    });
+  // Tags helpers (ID-based)
+  function addTagToLocation(locId: string, rawTag: string) {
+    const clean = rawTag.trim();
+    if (!clean) return;
+
+    setWorld((prev) => ({
+      ...prev,
+      locations: prev.locations.map((l) => {
+        if (l.id !== locId) return l;
+        const existing = l.tags ?? [];
+        if (existing.includes(clean)) return l;
+        return { ...l, tags: [...existing, clean] };
+      }),
+    }));
   }
 
- 
+  function removeTagFromLocation(locId: string, tag: string) {
+    setWorld((prev) => ({
+      ...prev,
+      locations: prev.locations.map((l) => {
+        if (l.id !== locId) return l;
+        return { ...l, tags: (l.tags ?? []).filter((t) => t !== tag) };
+      }),
+    }));
+  }
+
+  // ------------------------------
   // Import JSON
-
+  // ------------------------------
   async function onImportFile(file: File) {
     try {
       const text = await file.text();
@@ -607,7 +658,7 @@ export default function App() {
               + Add Location
             </button>
 
-            {syncedWorld.locations.map((loc, index) => (
+            {syncedWorld.locations.map((loc) => (
               <div
                 key={loc.id}
                 style={{
@@ -626,7 +677,7 @@ export default function App() {
                 >
                   <div style={{ fontWeight: 700 }}>{loc.id}</div>
                   <button
-                    onClick={() => deleteLocation(index)}
+                    onClick={() => deleteLocationById(loc.id)}
                     style={{
                       padding: "6px 10px",
                       borderRadius: 8,
@@ -647,7 +698,7 @@ export default function App() {
                   <input
                     value={loc.name}
                     onChange={(e) =>
-                      updateLocation(index, { name: e.target.value })
+                      updateLocationById(loc.id, { name: e.target.value })
                     }
                     style={{
                       width: "100%",
@@ -665,7 +716,7 @@ export default function App() {
                   <select
                     value={loc.mapId}
                     onChange={(e) =>
-                      updateLocation(index, { mapId: e.target.value })
+                      updateLocationById(loc.id, { mapId: e.target.value })
                     }
                     style={{
                       width: "100%",
@@ -692,8 +743,11 @@ export default function App() {
                       type="number"
                       value={loc.position.x}
                       onChange={(e) =>
-                        updateLocation(index, {
-                          position: { ...loc.position, x: Number(e.target.value) },
+                        updateLocationById(loc.id, {
+                          position: {
+                            ...loc.position,
+                            x: Number(e.target.value),
+                          },
                         })
                       }
                       style={{
@@ -713,8 +767,11 @@ export default function App() {
                       type="number"
                       value={loc.position.y}
                       onChange={(e) =>
-                        updateLocation(index, {
-                          position: { ...loc.position, y: Number(e.target.value) },
+                        updateLocationById(loc.id, {
+                          position: {
+                            ...loc.position,
+                            y: Number(e.target.value),
+                          },
                         })
                       }
                       style={{
@@ -734,8 +791,11 @@ export default function App() {
                       type="number"
                       value={loc.position.z}
                       onChange={(e) =>
-                        updateLocation(index, {
-                          position: { ...loc.position, z: Number(e.target.value) },
+                        updateLocationById(loc.id, {
+                          position: {
+                            ...loc.position,
+                            z: Number(e.target.value),
+                          },
                         })
                       }
                       style={{
@@ -756,7 +816,9 @@ export default function App() {
                     type="number"
                     value={loc.radius}
                     onChange={(e) =>
-                      updateLocation(index, { radius: Number(e.target.value) })
+                      updateLocationById(loc.id, {
+                        radius: Number(e.target.value),
+                      })
                     }
                     style={{
                       width: "100%",
@@ -768,6 +830,103 @@ export default function App() {
                     }}
                   />
                 </label>
+
+                {/* TAGS */}
+                <div style={{ marginTop: 10 }}>
+                  <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 6 }}>
+                    Tags
+                  </div>
+
+                  <div
+                    style={{ display: "flex", gap: 8, alignItems: "center" }}
+                  >
+                    <input
+                      value={tagDraftByLocId[loc.id] ?? ""}
+                      onChange={(e) =>
+                        setTagDraftByLocId((prev) => ({
+                          ...prev,
+                          [loc.id]: e.target.value,
+                        }))
+                      }
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          addTagToLocation(
+                            loc.id,
+                            tagDraftByLocId[loc.id] ?? ""
+                          );
+                          setTagDraftByLocId((prev) => ({
+                            ...prev,
+                            [loc.id]: "",
+                          }));
+                        }
+                      }}
+                      placeholder="type tag + Enter"
+                      style={{
+                        flex: 1,
+                        padding: 8,
+                        borderRadius: 8,
+                        border: "1px solid #666",
+                        background: "#333",
+                        color: "#eee",
+                      }}
+                    />
+
+                    <button
+                      onClick={() => {
+                        addTagToLocation(loc.id, tagDraftByLocId[loc.id] ?? "");
+                        setTagDraftByLocId((prev) => ({
+                          ...prev,
+                          [loc.id]: "",
+                        }));
+                      }}
+                      style={{
+                        padding: "8px 12px",
+                        borderRadius: 8,
+                        border: "1px solid #666",
+                        background: "transparent",
+                        color: "#eee",
+                        cursor: "pointer",
+                      }}
+                    >
+                      Add
+                    </button>
+                  </div>
+
+                  <div
+                    style={{
+                      marginTop: 8,
+                      display: "flex",
+                      gap: 8,
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    {(loc.tags ?? []).map((t) => (
+                      <button
+                        key={t}
+                        onClick={() => removeTagFromLocation(loc.id, t)}
+                        title="Click to remove"
+                        style={{
+                          padding: "6px 10px",
+                          borderRadius: 999,
+                          border: "1px solid #666",
+                          background: "transparent",
+                          color: "#eee",
+                          cursor: "pointer",
+                          opacity: 0.9,
+                        }}
+                      >
+                        {t} ✕
+                      </button>
+                    ))}
+
+                    {(loc.tags ?? []).length === 0 && (
+                      <div style={{ opacity: 0.7, fontSize: 12 }}>
+                        No tags yet
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
             ))}
           </section>
