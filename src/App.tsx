@@ -6,11 +6,13 @@ import type {
   MapData,
   Location as WorldLocation,
 } from "./types/worldTypes";
+
 import { Sidebar } from "./components/Sidebar";
 import { WorldEditor } from "./components/WorldEditor";
 import { MapsEditor } from "./components/MapsEditor";
 import { LocationsEditor } from "./components/LocationsEditor";
 import { PreviewTab } from "./components/PreviewTab";
+
 // ------------------------------
 // helpers: import/export
 // ------------------------------
@@ -28,8 +30,22 @@ function downloadJson(filename: string, data: unknown) {
   URL.revokeObjectURL(url);
 }
 
+// types
 type TabKey = "world" | "maps" | "locations" | "preview";
 type Issue = { level: "error" | "warning"; message: string };
+// component
+function isGameWorldFile(x: unknown): x is GameWorldFile {
+  if (!x || typeof x !== "object") return false;
+
+  const obj = x as Record<string, unknown>;
+
+  return (
+    Array.isArray(obj.maps) &&
+    Array.isArray(obj.locations) &&
+    typeof obj.world === "object" &&
+    obj.world !== null
+  );
+}
 
 // ------------------------------
 // APP
@@ -44,11 +60,13 @@ export default function App() {
     }
   }, []);
 
-  // Load from localStorage first (if present) (useState)
+  // Persisted world
   const { world, setWorld, resetSavedWorld } = usePersistedWorld(
     "open_world_toolkit_world",
     initialWorld
   );
+
+  // UI state
   const [activeTab, setActiveTab] = useState<TabKey>("world");
   const importInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -77,6 +95,38 @@ export default function App() {
     return { ...world, maps };
   }, [world]);
 
+  // Smart tag suggestions
+  const tagSuggestions = useMemo(() => {
+    const presets = [
+      "spawn",
+      "poi",
+      "city",
+      "town",
+      "dungeon",
+      "shop",
+      "quest",
+      "boss",
+      "safe",
+      "danger",
+      "forest",
+      "desert",
+      "mountain",
+      "water",
+      "camp",
+      "npc",
+    ];
+
+    const used = new Set<string>();
+    for (const loc of syncedWorld.locations) {
+      for (const t of loc.tags ?? []) used.add(t);
+    }
+
+    return Array.from(new Set([...presets, ...Array.from(used)]))
+      .map((t) => t.trim())
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b));
+  }, [syncedWorld.locations]);
+
   // Lookup helper: location id -> Location
   const locationById = useMemo(() => {
     return new Map(syncedWorld.locations.map((l) => [l.id, l] as const));
@@ -91,7 +141,6 @@ export default function App() {
     const mapIds = new Set(syncedWorld.maps.map((m) => m.id));
     const locationIds = new Set(syncedWorld.locations.map((l) => l.id));
 
-    // ERRORS: location points to a map that doesn't exist
     for (const l of syncedWorld.locations) {
       if (l.mapId !== "unassigned" && !mapIds.has(l.mapId)) {
         issues.push({
@@ -101,7 +150,6 @@ export default function App() {
       }
     }
 
-    // ERRORS: map references a locationId that doesn't exist
     for (const m of syncedWorld.maps) {
       for (const locId of m.locations ?? []) {
         if (!locationIds.has(locId)) {
@@ -113,7 +161,6 @@ export default function App() {
       }
     }
 
-    // WARNINGS: missing tags
     for (const l of syncedWorld.locations) {
       if (!l.tags || l.tags.length === 0) {
         issues.push({
@@ -121,10 +168,6 @@ export default function App() {
           message: `Location "${l.id}" has no tags`,
         });
       }
-    }
-
-    // WARNINGS: unassigned mapId (allowed, but often a mistake)
-    for (const l of syncedWorld.locations) {
       if (l.mapId === "unassigned") {
         issues.push({
           level: "warning",
@@ -140,12 +183,10 @@ export default function App() {
     () => previewIssues.filter((i) => i.level === "error"),
     [previewIssues]
   );
-
   const warningIssues = useMemo(
     () => previewIssues.filter((i) => i.level === "warning"),
     [previewIssues]
   );
-
   const hasErrors = errorIssues.length > 0;
 
   // ------------------------------
@@ -188,18 +229,15 @@ export default function App() {
   function deleteMap(mapId: string) {
     setWorld((prev) => {
       const maps = prev.maps.filter((m) => m.id !== mapId);
-
-      // Any locations assigned to this map become unassigned
       const locations = prev.locations.map((l) =>
         l.mapId === mapId ? { ...l, mapId: "unassigned" } : l
       );
-
       return { ...prev, maps, locations };
     });
   }
 
   // ------------------------------
-  // Locations editor (ID-based to avoid index bugs)
+  // Locations editor
   // ------------------------------
   function addLocation() {
     setWorld((prev) => {
@@ -234,7 +272,6 @@ export default function App() {
       locations: prev.locations.filter((l) => l.id !== locId),
     }));
 
-    // also clear any draft text for that location
     setTagDraftByLocId((prev) => {
       const next = { ...prev };
       delete next[locId];
@@ -242,7 +279,6 @@ export default function App() {
     });
   }
 
-  // Tags helpers (ID-based)
   function addTagToLocation(locId: string, rawTag: string) {
     const clean = rawTag.trim();
     if (!clean) return;
@@ -274,20 +310,13 @@ export default function App() {
   async function onImportFile(file: File) {
     try {
       const text = await file.text();
-      const parsed = JSON.parse(text);
+      const parsed = JSON.parse(text) as unknown;
 
-      // prevents crashes
-      if (
-        !parsed ||
-        typeof parsed !== "object" ||
-        !Array.isArray(parsed.maps) ||
-        !Array.isArray(parsed.locations) ||
-        !parsed.world
-      ) {
+      if (!isGameWorldFile(parsed)) {
         throw new Error("Invalid world structure");
       }
 
-      setWorld(parsed as GameWorldFile);
+      setWorld(parsed);
       alert("Imported successfully");
     } catch (err) {
       console.error("Import failed:", err);
@@ -296,7 +325,9 @@ export default function App() {
       if (importInputRef.current) importInputRef.current.value = "";
     }
   }
-
+  // ------------------------------
+  // Render
+  // ------------------------------
   return (
     <div
       style={{
@@ -337,9 +368,11 @@ export default function App() {
                   resetSavedWorld();
                 }
               }}
+              style={{ marginBottom: 12 }}
             >
               Reset saved data
             </button>
+
             <WorldEditor
               world={world}
               onUpdateWorld={updateWorldInfo}
@@ -364,7 +397,15 @@ export default function App() {
             maps={syncedWorld.maps}
             onAddMap={addMap}
             onUpdateMap={updateMap}
-            onDeleteMap={deleteMap}
+            onDeleteMap={(mapId) => {
+              if (
+                confirm(
+                  `Delete map "${mapId}"? Locations on that map will become unassigned.`
+                )
+              ) {
+                deleteMap(mapId);
+              }
+            }}
           />
         )}
 
@@ -375,9 +416,16 @@ export default function App() {
             maps={syncedWorld.maps}
             tagDraftByLocId={tagDraftByLocId}
             setTagDraftByLocId={setTagDraftByLocId}
+            tagSuggestions={tagSuggestions}
             onAddLocation={addLocation}
             onUpdateLocation={updateLocationById}
-            onDeleteLocation={deleteLocationById}
+            onDeleteLocation={(locId) => {
+              if (
+                confirm(`Delete location "${locId}"? This cannot be undone.`)
+              ) {
+                deleteLocationById(locId);
+              }
+            }}
             onAddTag={addTagToLocation}
             onRemoveTag={removeTagFromLocation}
           />

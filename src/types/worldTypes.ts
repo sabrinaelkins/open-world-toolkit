@@ -25,14 +25,20 @@ export interface Location {
   radius: number;
   tags: string[];
 }
-
-export interface GameWorldFile {
-  version: string;
-  world: World;
+export type GameWorldFile = {
+  version: number;
+  world: {
+    id: string;
+    name: string;
+    description: string;
+    settings?: {
+      defaultSpawnMapId?: string;
+    };
+  };
   maps: MapData[];
   locations: Location[];
-  npcs: unknown[];
-  items: unknown[];
-  quests: unknown[];
-  triggers: unknown[];
-}
+  npcs?: unknown[];
+  items?: unknown[];
+  quests?: unknown[];
+  triggers?: unknown[];
+};
