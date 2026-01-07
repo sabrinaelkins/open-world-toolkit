@@ -1,3 +1,4 @@
+// Interface
 export interface WorldSettings {
   defaultSpawnMapId: string;
 }
@@ -25,6 +26,13 @@ export interface Location {
   radius: number;
   tags: string[];
 }
+// Types
+
+export type TagMeta = {
+  description?: string;
+  category?: string;
+  color?: string; // hex like "#22c55e"
+};
 export type GameWorldFile = {
   version: number;
   world: {
@@ -37,6 +45,7 @@ export type GameWorldFile = {
   };
   maps: MapData[];
   locations: Location[];
+  tagMeta?: Record<string, TagMeta>;
   npcs?: unknown[];
   items?: unknown[];
   quests?: unknown[];

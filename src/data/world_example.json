@@ -27,6 +27,18 @@
       "tags": ["spawn"]
     }
   ],
+  "tagMeta": {
+    "spawn": {
+      "description": "Default player spawn",
+      "category": "system",
+      "color": "#22c55e"
+    },
+    "poi": {
+      "description": "Point of interest",
+      "category": "world",
+      "color": "#3b82f6"
+    }
+  },
   "npcs": [],
   "items": [],
   "quests": [],

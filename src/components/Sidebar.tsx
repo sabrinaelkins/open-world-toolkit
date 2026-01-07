@@ -1,4 +1,4 @@
-type TabKey = "world" | "maps" | "locations" | "preview";
+type TabKey = "world" | "maps" | "locations" | "tags" | "preview";
 
 type Props = {
   activeTab: TabKey;
@@ -10,9 +10,9 @@ export function Sidebar({ activeTab, setActiveTab }: Props) {
     ["world", "World"],
     ["maps", "Maps"],
     ["locations", "Locations"],
+    ["tags", "Tags"],
     ["preview", "Preview"],
   ];
-
   return (
     <aside
       style={{

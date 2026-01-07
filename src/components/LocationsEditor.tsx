@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { Dispatch, SetStateAction, KeyboardEvent } from "react";
 import type { MapData, Location as WorldLocation } from "../types/worldTypes";
 
@@ -39,6 +39,22 @@ export function LocationsEditor({
   const [activeSugIdxByLocId, setActiveSugIdxByLocId] = useState<
     Record<string, number>
   >({});
+
+  // A) tag counts across all locations (top-level hook ✅)
+  const tagCountByLower = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const l of locations) {
+      for (const t of l.tags ?? []) {
+        const k = t.toLowerCase();
+        m.set(k, (m.get(k) ?? 0) + 1);
+      }
+    }
+    return m;
+  }, [locations]);
+
+  function getTagCount(tag: string) {
+    return tagCountByLower.get(tag.toLowerCase()) ?? 0;
+  }
 
   // filtering logic
   const filteredLocations = locations.filter((loc) => {
@@ -124,7 +140,7 @@ export function LocationsEditor({
       )}
 
       {filteredLocations.map((loc) => {
-        // per-location helpers (must be inside this block)
+        // per-location helpers (safe inside map)
         function setActiveIdx(locId: string, idx: number) {
           setActiveSugIdxByLocId((prev) => ({ ...prev, [locId]: idx }));
         }
@@ -133,18 +149,48 @@ export function LocationsEditor({
           setActiveSugIdxByLocId((prev) => ({ ...prev, [locId]: -1 }));
         }
 
+        function commitDraftTags(locId: string) {
+          const raw = (tagDraftByLocId[locId] ?? "").trim();
+          if (!raw) return;
+
+          const parts = raw
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean);
+
+          const seen = new Set<string>();
+          for (const p of parts) {
+            const k = p.toLowerCase();
+            if (seen.has(k)) continue;
+            seen.add(k);
+            onAddTag(locId, p);
+          }
+
+          setTagDraftByLocId((prev) => ({ ...prev, [locId]: "" }));
+          clearActiveIdx(locId);
+        }
+
         const existingLower = new Set(
           (loc.tags ?? []).map((t) => t.toLowerCase())
         );
-
         const draftLower = (tagDraftByLocId[loc.id] ?? "").trim().toLowerCase();
 
-        const suggestions = tagSuggestions
+        // Base list: remove existing + filter by draft
+        let suggestions = tagSuggestions
           .filter((t) => !existingLower.has(t.toLowerCase()))
           .filter((t) =>
             draftLower ? t.toLowerCase().includes(draftLower) : true
-          )
-          .slice(0, 12);
+          );
+
+        // B) sort by popularity (count desc), then alpha
+        suggestions.sort((a, b) => {
+          const ca = getTagCount(a);
+          const cb = getTagCount(b);
+          if (cb !== ca) return cb - ca;
+          return a.localeCompare(b);
+        });
+
+        suggestions = suggestions.slice(0, 12);
 
         const sCount = suggestions.length;
         const activeIdx = activeSugIdxByLocId[loc.id] ?? -1;
@@ -225,71 +271,6 @@ export function LocationsEditor({
               </select>
             </label>
 
-            <div style={{ marginTop: 10, display: "flex", gap: 10 }}>
-              <label style={{ flex: 1 }}>
-                <div style={{ fontSize: 12, opacity: 0.8 }}>X</div>
-                <input
-                  type="number"
-                  value={loc.position.x}
-                  onChange={(e) =>
-                    onUpdateLocation(loc.id, {
-                      position: { ...loc.position, x: Number(e.target.value) },
-                    })
-                  }
-                  style={{
-                    width: "100%",
-                    padding: 10,
-                    borderRadius: 6,
-                    border: "1px solid #666",
-                    background: "#333",
-                    color: "#eee",
-                  }}
-                />
-              </label>
-
-              <label style={{ flex: 1 }}>
-                <div style={{ fontSize: 12, opacity: 0.8 }}>Y</div>
-                <input
-                  type="number"
-                  value={loc.position.y}
-                  onChange={(e) =>
-                    onUpdateLocation(loc.id, {
-                      position: { ...loc.position, y: Number(e.target.value) },
-                    })
-                  }
-                  style={{
-                    width: "100%",
-                    padding: 10,
-                    borderRadius: 6,
-                    border: "1px solid #666",
-                    background: "#333",
-                    color: "#eee",
-                  }}
-                />
-              </label>
-
-              <label style={{ flex: 1 }}>
-                <div style={{ fontSize: 12, opacity: 0.8 }}>Z</div>
-                <input
-                  type="number"
-                  value={loc.position.z}
-                  onChange={(e) =>
-                    onUpdateLocation(loc.id, {
-                      position: { ...loc.position, z: Number(e.target.value) },
-                    })
-                  }
-                  style={{
-                    width: "100%",
-                    padding: 10,
-                    borderRadius: 6,
-                    border: "1px solid #666",
-                    background: "#333",
-                    color: "#eee",
-                  }}
-                />
-              </label>
-            </div>
-
             <label style={{ display: "block", marginTop: 10 }}>
               <div style={{ fontSize: 12, opacity: 0.8 }}>Radius</div>
               <input
@@ -323,11 +304,9 @@ export function LocationsEditor({
                       ...prev,
                       [loc.id]: e.target.value,
                     }));
-                    // if they type, reset highlight
                     clearActiveIdx(loc.id);
                   }}
                   onKeyDown={(e: KeyboardEvent<HTMLInputElement>) => {
-                    // ArrowDown = next suggestion
                     if (e.key === "ArrowDown") {
                       if (sCount === 0) return;
                       e.preventDefault();
@@ -336,7 +315,6 @@ export function LocationsEditor({
                       return;
                     }
 
-                    // ArrowUp = previous suggestion
                     if (e.key === "ArrowUp") {
                       if (sCount === 0) return;
                       e.preventDefault();
@@ -348,16 +326,15 @@ export function LocationsEditor({
                       return;
                     }
 
-                    // Escape = close suggestions
                     if (e.key === "Escape") {
                       clearActiveIdx(loc.id);
                       return;
                     }
 
-                    // Enter = choose highlighted suggestion OR add typed tag
                     if (e.key === "Enter") {
                       e.preventDefault();
 
+                      // choose highlighted suggestion
                       if (activeIdx >= 0 && activeIdx < sCount) {
                         const chosen = suggestions[activeIdx];
                         onAddTag(loc.id, chosen);
@@ -369,14 +346,11 @@ export function LocationsEditor({
                         return;
                       }
 
-                      const raw = (tagDraftByLocId[loc.id] ?? "").trim();
-                      if (!raw) return;
-                      onAddTag(loc.id, raw);
-                      setTagDraftByLocId((prev) => ({ ...prev, [loc.id]: "" }));
-                      clearActiveIdx(loc.id);
+                      // otherwise commit typed tags (comma-supported)
+                      commitDraftTags(loc.id);
                     }
                   }}
-                  placeholder="type tag + Enter"
+                  placeholder="type tag(s) + Enter (comma-separated ok)"
                   style={{
                     flex: 1,
                     padding: 8,
@@ -388,11 +362,7 @@ export function LocationsEditor({
                 />
 
                 <button
-                  onClick={() => {
-                    onAddTag(loc.id, tagDraftByLocId[loc.id] ?? "");
-                    setTagDraftByLocId((prev) => ({ ...prev, [loc.id]: "" }));
-                    clearActiveIdx(loc.id);
-                  }}
+                  onClick={() => commitDraftTags(loc.id)}
                   style={{
                     padding: "8px 12px",
                     borderRadius: 8,
@@ -410,17 +380,21 @@ export function LocationsEditor({
               {suggestions.length > 0 && (
                 <div
                   style={{
+                    marginTop: 8,
                     display: "flex",
                     flexWrap: "wrap",
                     gap: 8,
-                    marginTop: 8,
+                    opacity: draftLower ? 1 : 0.55,
                   }}
                 >
                   {suggestions.map((t, idx) => {
                     const isActive = idx === activeIdx;
+                    const count = getTagCount(t);
+
                     return (
                       <button
                         key={t}
+                        onMouseDown={(e) => e.preventDefault()}
                         onClick={() => {
                           onAddTag(loc.id, t);
                           setTagDraftByLocId((prev) => ({
@@ -436,12 +410,14 @@ export function LocationsEditor({
                             ? "1px solid #eee"
                             : "1px solid #555",
                           background: isActive ? "#444" : "transparent",
-                          color: "#ddd",
+                          color: isActive ? "#fff" : "#ddd",
                           cursor: "pointer",
                           fontSize: 12,
                         }}
+                        aria-selected={isActive}
                       >
-                        + {t}
+                        {isActive ? "▶ " : "+ "}
+                        {t} <span style={{ opacity: 0.7 }}>({count})</span>
                       </button>
                     );
                   })}

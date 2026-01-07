@@ -6,7 +6,7 @@ import type {
   MapData,
   Location as WorldLocation,
 } from "./types/worldTypes";
-
+import { TagsEditor } from "./components/TagsEditor";
 import { Sidebar } from "./components/Sidebar";
 import { WorldEditor } from "./components/WorldEditor";
 import { MapsEditor } from "./components/MapsEditor";
@@ -31,7 +31,7 @@ function downloadJson(filename: string, data: unknown) {
 }
 
 // types
-type TabKey = "world" | "maps" | "locations" | "preview";
+type TabKey = "world" | "maps" | "locations" | "tags" | "preview";
 type Issue = { level: "error" | "warning"; message: string };
 // component
 function isGameWorldFile(x: unknown): x is GameWorldFile {
@@ -75,6 +75,29 @@ export default function App() {
     Record<string, string>
   >({});
 
+  function ensureTagMeta(prev: GameWorldFile) {
+    return prev.tagMeta ? prev : { ...prev, tagMeta: {} };
+  }
+
+  function updateTagMeta(
+    tag: string,
+    patch: Partial<{ description: string; category: string; color: string }>
+  ) {
+    const key = tag.trim().toLowerCase();
+    if (!key) return;
+
+    setWorld((prev) => {
+      const base = ensureTagMeta(prev);
+      const existing = base.tagMeta?.[key] ?? {};
+      return {
+        ...base,
+        tagMeta: {
+          ...base.tagMeta,
+          [key]: { ...existing, ...patch },
+        },
+      };
+    });
+  }
   // ------------------------------
   // Keep map.locations derived from world.locations (single source of truth)
   // ------------------------------
@@ -303,7 +326,52 @@ export default function App() {
       }),
     }));
   }
+  function renameTagEverywhere(from: string, to: string) {
+    const src = from.trim();
+    const dst = to.trim();
+    if (!src || !dst) return;
 
+    setWorld((prev) => ({
+      ...prev,
+      locations: prev.locations.map((l) => {
+        const tags = l.tags ?? [];
+
+        // replace + dedupe (case-insensitive)
+        const next = tags.map((t) =>
+          t.toLowerCase() === src.toLowerCase() ? dst : t
+        );
+        const seen = new Set<string>();
+        const deduped: string[] = [];
+        for (const t of next) {
+          const k = t.toLowerCase();
+          if (seen.has(k)) continue;
+          seen.add(k);
+          deduped.push(t);
+        }
+        return { ...l, tags: deduped };
+      }),
+    }));
+  }
+
+  function deleteTagEverywhere(tag: string) {
+    const kill = tag.trim();
+    if (!kill) return;
+
+    setWorld((prev) => ({
+      ...prev,
+      locations: prev.locations.map((l) => ({
+        ...l,
+        tags: (l.tags ?? []).filter(
+          (t) => t.toLowerCase() !== kill.toLowerCase()
+        ),
+      })),
+    }));
+  }
+
+  // rename
+  function mergeTagEverywhere(from: string, to: string) {
+    renameTagEverywhere(from, to);
+  }
   // ------------------------------
   // Import JSON
   // ------------------------------
@@ -430,7 +498,17 @@ export default function App() {
             onRemoveTag={removeTagFromLocation}
           />
         )}
-
+        {/* TAGS */}
+        {activeTab === "tags" && (
+          <TagsEditor
+            locations={syncedWorld.locations}
+            tagMeta={syncedWorld.tagMeta ?? {}}
+            onUpdateTagMeta={updateTagMeta}
+            onRenameTag={renameTagEverywhere}
+            onMergeTag={mergeTagEverywhere}
+            onDeleteTag={deleteTagEverywhere}
+          />
+        )}
         {/* PREVIEW */}
         {activeTab === "preview" && (
           <PreviewTab
