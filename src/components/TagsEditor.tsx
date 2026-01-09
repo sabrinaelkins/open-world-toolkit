@@ -1,8 +1,56 @@
 import { useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
-import type { Location as WorldLocation } from "../types/worldTypes";
+import type {
+  Location as WorldLocation,
+  TagMeta,
+  TagCategory,
+} from "../types/worldTypes";
 
-type TagMeta = { description?: string; category?: string; color?: string };
+const CATEGORY_ORDER: (TagCategory | "")[] = [
+  "system",
+  "world",
+  "location",
+  "poi",
+  "biome",
+  "faction",
+  "quest",
+  "gameplay",
+  "combat",
+  "loot",
+  "custom",
+  "",
+];
+
+const CATEGORY_LABEL: Record<TagCategory | "", string> = {
+  system: "System",
+  world: "World",
+  location: "Location",
+  poi: "Point of Interest",
+  biome: "Biome",
+  faction: "Faction",
+  quest: "Quest",
+  gameplay: "Gameplay",
+  combat: "Combat",
+  loot: "Loot",
+  custom: "Custom",
+  "": "Uncategorized",
+};
+
+const CATEGORY_COLOR: Record<TagCategory | "", string> = {
+  system: "#ef4444",
+  world: "#3b82f6",
+  location: "#22c55e",
+  poi: "#f59e0b",
+  biome: "#14b8a6",
+  faction: "#a855f7",
+  quest: "#eab308",
+  gameplay: "#22c55e",
+  combat: "#dc2626",
+  loot: "#f97316",
+  custom: "#6b7280",
+  "": "#666666",
+};
+
 type Props = {
   locations: WorldLocation[];
   tagMeta: Record<string, TagMeta>;
@@ -21,7 +69,7 @@ export function TagsEditor({
   onDeleteTag,
 }: Props) {
   const [search, setSearch] = useState("");
-  const [selectedTag, setSelectedTag] = useState<string>(""); // stores canonical key (lowercase)
+  const [selectedTag, setSelectedTag] = useState<string>(""); // canonical key (lowercase)
   const [renameTo, setRenameTo] = useState("");
   const [mergeTo, setMergeTo] = useState("");
 
@@ -61,6 +109,35 @@ export function TagsEditor({
     );
   }, [search, tagStats]);
 
+  type TagRow = { key: string; label: string; count: number };
+  type TagGroup = { category: TagCategory | ""; items: TagRow[] };
+
+  const grouped = useMemo((): TagGroup[] => {
+    const buckets = new Map<TagCategory | "", TagRow[]>();
+
+    for (const t of filtered) {
+      const cat = (tagMeta[t.key]?.category ?? "") as TagCategory | "";
+      const arr = buckets.get(cat) ?? [];
+      arr.push(t);
+      buckets.set(cat, arr);
+    }
+
+    const out: TagGroup[] = [];
+    for (const cat of CATEGORY_ORDER) {
+      const items = buckets.get(cat);
+      if (!items || items.length === 0) continue;
+
+      items.sort((a, b) => {
+        if (b.count !== a.count) return b.count - a.count;
+        return a.label.localeCompare(b.label);
+      });
+
+      out.push({ category: cat, items });
+    }
+
+    return out;
+  }, [filtered, tagMeta]);
+
   // current selected tag object (based on key)
   const selected = useMemo(() => {
     if (!selectedTag) return null;
@@ -68,15 +145,10 @@ export function TagsEditor({
     return tagStats.find((t) => t.key === k) ?? null;
   }, [selectedTag, tagStats]);
 
-  const meta = selected ? tagMeta[selected.key] ?? {} : {};
-
-  function focusActiveRow(key: string) {
-    const el = tagRowRefs.current.get(key);
-    if (el) el.scrollIntoView({ block: "nearest" });
-  }
+  const meta: TagMeta = selected ? tagMeta[selected.key] ?? {} : {};
 
   function selectTag(tagKey: string) {
-    setSelectedTag(tagKey.trim().toLowerCase()); // store canonical key
+    setSelectedTag(tagKey.trim().toLowerCase());
     setRenameTo("");
     setMergeTo("");
   }
@@ -88,7 +160,6 @@ export function TagsEditor({
       e.preventDefault();
       setActiveIdx((prev) => {
         const next = prev < 0 ? 0 : (prev + 1) % filtered.length;
-        focusActiveRow(filtered[next].key);
         return next;
       });
       return;
@@ -101,7 +172,6 @@ export function TagsEditor({
           prev < 0
             ? filtered.length - 1
             : (prev - 1 + filtered.length) % filtered.length;
-        focusActiveRow(filtered[next].key);
         return next;
       });
       return;
@@ -130,8 +200,6 @@ export function TagsEditor({
     if (from.toLowerCase() === to.toLowerCase()) return;
 
     onRenameTag(from, to);
-
-    // keep renamed tag selected (by key)
     setSelectedTag(to.toLowerCase());
     setRenameTo("");
     setMergeTo("");
@@ -145,8 +213,6 @@ export function TagsEditor({
     if (from.toLowerCase() === to.toLowerCase()) return;
 
     onMergeTag(from, to);
-
-    // select the target tag
     setSelectedTag(to.toLowerCase());
     setMergeTo("");
     setRenameTo("");
@@ -171,16 +237,11 @@ export function TagsEditor({
   }
 
   return (
-    <section
-      style={{
-        marginTop: 16,
-        padding: 16,
-        border: "1px solid #444",
-        borderRadius: 8,
-      }}
-    >
+    <section className="owt-panel owt-panel-lifted" style={{ marginTop: 24 }}>
+      {/* Heading first, like the other tabs */}
       <h2 style={{ marginTop: 0 }}>Tags</h2>
 
+      {/* Search */}
       <input
         value={search}
         onChange={(e) => {
@@ -188,29 +249,26 @@ export function TagsEditor({
           setActiveIdx(-1);
         }}
         placeholder="Search tags…"
-        style={{
-          width: "100%",
-          padding: 10,
-          borderRadius: 8,
-          border: "1px solid #666",
-          background: "#333",
-          color: "#eee",
-          marginBottom: 12,
-        }}
+        style={{ width: "100%", marginBottom: 14 }}
       />
 
-      <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
-        {/* Left: tag list */}
+      <div
+        style={{
+          display: "flex",
+          gap: 16,
+          alignItems: "flex-start",
+        }}
+      >
+        {/* LEFT: tag list */}
         <div
+          className="owt-subpanel"
           tabIndex={0}
           onKeyDown={onTagListKeyDown}
           onMouseDown={(e) => (e.currentTarget as HTMLDivElement).focus()}
           style={{
             flex: 1,
             minWidth: 260,
-            border: "1px solid #555",
-            borderRadius: 8,
-            padding: 10,
+            padding: 12,
             outline: "none",
           }}
         >
@@ -223,60 +281,111 @@ export function TagsEditor({
               No tags match your search
             </div>
           ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              {filtered.map((t, idx) => {
-                const isSelected = selected?.key === t.key;
-                const isActive = idx === activeIdx;
-
-                return (
-                  <button
-                    key={t.key}
-                    ref={(el) => {
-                      tagRowRefs.current.set(t.key, el);
-                    }}
-                    onClick={() => {
-                      setActiveIdx(idx);
-                      selectTag(t.key);
-                    }}
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {grouped.map((g) => (
+                <div key={g.category || "uncat"} style={{ marginBottom: 6 }}>
+                  {/* Group header */}
+                  <div
                     style={{
-                      textAlign: "left",
-                      padding: "10px 10px",
-                      borderRadius: 8,
-                      border: isSelected
-                        ? "1px solid #eee"
-                        : isActive
-                        ? "1px solid #aaa"
-                        : "1px solid #666",
-                      background: isSelected
-                        ? "#3a3a3a"
-                        : isActive
-                        ? "#2f2f2f"
-                        : "transparent",
-                      color: "#eee",
-                      cursor: "pointer",
+                      fontSize: 11,
+                      textTransform: "uppercase",
+                      letterSpacing: 0.08,
+                      opacity: 0.8,
+                      margin: "6px 0 4px",
                       display: "flex",
+                      alignItems: "center",
                       justifyContent: "space-between",
-                      gap: 10,
                     }}
-                    aria-selected={isSelected}
                   >
-                    <span>{t.label}</span>
-                    <span style={{ opacity: 0.8, fontSize: 12 }}>
-                      {t.count}
-                    </span>
-                  </button>
-                );
-              })}
+                    <span>{CATEGORY_LABEL[g.category]}</span>
+                    <span style={{ opacity: 0.7 }}>{g.items.length}</span>
+                  </div>
+
+                  {/* Group items */}
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 6,
+                    }}
+                  >
+                    {g.items.map((t) => {
+                      const idx = filtered.findIndex((x) => x.key === t.key);
+                      const isSelected = selected?.key === t.key;
+                      const isActive = idx === activeIdx;
+
+                      return (
+                        <button
+                          key={t.key}
+                          ref={(el) => {
+                            tagRowRefs.current.set(t.key, el);
+                          }}
+                          onClick={() => {
+                            setActiveIdx(idx);
+                            selectTag(t.key);
+                          }}
+                          style={{
+                            textAlign: "left",
+                            padding: "8px 10px",
+                            borderRadius: 10,
+                            border: isSelected
+                              ? "1px solid #e5e7eb"
+                              : isActive
+                              ? "1px solid #9ca3af"
+                              : "1px solid #4b5563",
+                            background: isSelected
+                              ? "rgba(59,130,246,0.25)"
+                              : isActive
+                              ? "rgba(55,65,81,0.9)"
+                              : "transparent",
+                            color: "#e5e7eb",
+                            cursor: "pointer",
+                            display: "flex",
+                            justifyContent: "space-between",
+                            gap: 10,
+                            fontSize: 13,
+                            transition:
+                              "background 120ms ease, border 120ms ease, transform 100ms ease",
+                          }}
+                          aria-selected={isSelected}
+                        >
+                          <span
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 8,
+                            }}
+                          >
+                            <span
+                              style={{
+                                width: 8,
+                                height: 8,
+                                borderRadius: 999,
+                                background: CATEGORY_COLOR[g.category],
+                                display: "inline-block",
+                              }}
+                            />
+                            {t.label}
+                          </span>
+
+                          <span style={{ opacity: 0.8, fontSize: 12 }}>
+                            {t.count}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </div>
 
-        {/* Right: actions */}
+        {/* RIGHT: details */}
         <div
+          className="owt-subpanel"
           style={{
             flex: 1,
-            border: "1px solid #555",
-            borderRadius: 8,
             padding: 12,
           }}
         >
@@ -290,29 +399,99 @@ export function TagsEditor({
                 {selected.label}
               </div>
 
-              {/* Tag Descriptions */}
-              <div style={{ marginTop: 6, opacity: 0.8 }}>
-                Used {selected.count} time{selected.count === 1 ? "" : "s"}
+              <div style={{ marginTop: 6, opacity: 0.8, fontSize: 13 }}>
+                Used {selected.count} time
+                {selected.count === 1 ? "" : "s"}
               </div>
-              <input
-                value={meta.description ?? ""}
-                onChange={(e) =>
-                  onUpdateTagMeta(selected.key, { description: e.target.value })
-                }
-                placeholder="Describe what this tag means…"
-                style={{
-                  width: "100%",
-                  padding: 10,
-                  borderRadius: 8,
-                  border: "1px solid #666",
-                  background: "#333",
-                  color: "#eee",
-                }}
-              />
+
+              {/* Description */}
+              <div style={{ marginTop: 12 }}>
+                <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 4 }}>
+                  Description
+                </div>
+                <input
+                  value={meta.description ?? ""}
+                  onChange={(e) =>
+                    onUpdateTagMeta(selected.key, {
+                      description: e.target.value,
+                    })
+                  }
+                  placeholder="Describe what this tag means…"
+                  style={{ width: "100%" }}
+                />
+              </div>
+
+              {/* Category */}
+              <div style={{ marginTop: 12 }}>
+                <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 4 }}>
+                  Category
+                </div>
+                <select
+                  value={meta.category ?? ""}
+                  onChange={(e) => {
+                    const nextCategory = (e.target.value || undefined) as
+                      | TagCategory
+                      | undefined;
+
+                    const nextColor =
+                      meta.color && meta.color.trim()
+                        ? undefined
+                        : nextCategory
+                        ? CATEGORY_COLOR[nextCategory]
+                        : undefined;
+
+                    onUpdateTagMeta(selected.key, {
+                      category: nextCategory,
+                      ...(nextColor ? { color: nextColor } : {}),
+                    });
+                  }}
+                  style={{ width: "100%" }}
+                >
+                  <option value="">(none)</option>
+                  <option value="system">system</option>
+                  <option value="world">world</option>
+                  <option value="location">location</option>
+                  <option value="poi">poi</option>
+                  <option value="biome">biome</option>
+                  <option value="faction">faction</option>
+                  <option value="quest">quest</option>
+                  <option value="gameplay">gameplay</option>
+                  <option value="combat">combat</option>
+                  <option value="loot">loot</option>
+                  <option value="custom">custom</option>
+                </select>
+              </div>
+
+              {/* Color */}
+              <div style={{ marginTop: 12 }}>
+                <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 4 }}>
+                  Color
+                </div>
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <input
+                    value={meta.color ?? ""}
+                    onChange={(e) =>
+                      onUpdateTagMeta(selected.key, { color: e.target.value })
+                    }
+                    placeholder="#22c55e"
+                    style={{ flex: 1 }}
+                  />
+                  <div
+                    title={meta.color ?? ""}
+                    style={{
+                      width: 26,
+                      height: 26,
+                      borderRadius: 6,
+                      border: "1px solid #4b5563",
+                      background: meta.color ?? "transparent",
+                    }}
+                  />
+                </div>
+              </div>
 
               {/* Rename */}
               <div style={{ marginTop: 14 }}>
-                <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 6 }}>
+                <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 4 }}>
                   Rename tag
                 </div>
                 <div style={{ display: "flex", gap: 8 }}>
@@ -320,25 +499,19 @@ export function TagsEditor({
                     value={renameTo}
                     onChange={(e) => setRenameTo(e.target.value)}
                     placeholder="New name…"
-                    style={{
-                      flex: 1,
-                      padding: 10,
-                      borderRadius: 8,
-                      border: "1px solid #666",
-                      background: "#333",
-                      color: "#eee",
-                    }}
+                    style={{ flex: 1 }}
                   />
                   <button
                     onClick={handleRename}
                     style={{
-                      padding: "10px 12px",
+                      padding: "8px 12px",
                       borderRadius: 8,
-                      border: "1px solid #666",
+                      border: "1px solid #4b5563",
                       background: "transparent",
-                      color: "#eee",
+                      color: "#e5e7eb",
                       cursor: "pointer",
                       whiteSpace: "nowrap",
+                      fontSize: 13,
                     }}
                   >
                     Rename
@@ -348,7 +521,7 @@ export function TagsEditor({
 
               {/* Merge */}
               <div style={{ marginTop: 14 }}>
-                <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 6 }}>
+                <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 4 }}>
                   Merge into another tag
                 </div>
                 <div style={{ display: "flex", gap: 8 }}>
@@ -356,25 +529,19 @@ export function TagsEditor({
                     value={mergeTo}
                     onChange={(e) => setMergeTo(e.target.value)}
                     placeholder="Target tag…"
-                    style={{
-                      flex: 1,
-                      padding: 10,
-                      borderRadius: 8,
-                      border: "1px solid #666",
-                      background: "#333",
-                      color: "#eee",
-                    }}
+                    style={{ flex: 1 }}
                   />
                   <button
                     onClick={handleMerge}
                     style={{
-                      padding: "10px 12px",
+                      padding: "8px 12px",
                       borderRadius: 8,
-                      border: "1px solid #666",
+                      border: "1px solid #4b5563",
                       background: "transparent",
-                      color: "#eee",
+                      color: "#e5e7eb",
                       cursor: "pointer",
                       whiteSpace: "nowrap",
+                      fontSize: 13,
                     }}
                   >
                     Merge
@@ -387,16 +554,35 @@ export function TagsEditor({
               </div>
 
               {/* Delete */}
-              <div style={{ marginTop: 14 }}>
+              <div style={{ marginTop: 18 }}>
                 <button
                   onClick={handleDelete}
                   style={{
-                    padding: "10px 12px",
+                    padding: "10px 14px",
                     borderRadius: 8,
-                    border: "1px solid #666",
+                    border: "1px solid #f87171",
                     background: "transparent",
-                    color: "#eee",
+                    color: "#fca5a5",
                     cursor: "pointer",
+                    fontWeight: 600,
+                    transition: "all 140ms ease",
+                    boxShadow: "0 0 0px transparent",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.boxShadow =
+                      "0 0 12px rgba(248,113,113,0.6)";
+                    e.currentTarget.style.transform = "translateY(-1px)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.boxShadow = "0 0 0px transparent";
+                    e.currentTarget.style.transform = "none";
+                  }}
+                  onMouseDown={(e) => {
+                    e.currentTarget.style.transform = "scale(0.95)";
+                  }}
+                  onMouseUp={(e) => {
+                    e.currentTarget.style.transform =
+                      "translateY(-1px) scale(1)";
                   }}
                 >
                   Delete everywhere

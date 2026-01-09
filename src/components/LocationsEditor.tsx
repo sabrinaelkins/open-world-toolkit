@@ -1,14 +1,24 @@
 import { useMemo, useState } from "react";
 import type { Dispatch, SetStateAction, KeyboardEvent } from "react";
-import type { MapData, Location as WorldLocation } from "../types/worldTypes";
+import type {
+  Location as WorldLocation,
+  MapData,
+  TagMeta,
+} from "../types/worldTypes";
+import { TagChip } from "./TagChip";
+
+const QUICK_TAGS = ["spawn", "enemy", "town", "quest", "boss", "shop"];
 
 type Props = {
   locations: WorldLocation[];
   maps: MapData[];
+  tagMeta: Record<string, TagMeta>;
+
+  tagFilter: string;
+  setTagFilter: Dispatch<SetStateAction<string>>;
 
   tagDraftByLocId: Record<string, string>;
   setTagDraftByLocId: Dispatch<SetStateAction<Record<string, string>>>;
-
   tagSuggestions: string[];
 
   onAddLocation: () => void;
@@ -18,10 +28,12 @@ type Props = {
   onAddTag: (locId: string, rawTag: string) => void;
   onRemoveTag: (locId: string, tag: string) => void;
 };
-
 export function LocationsEditor({
   locations,
   maps,
+  tagMeta,
+  tagFilter,
+  setTagFilter,
   tagDraftByLocId,
   setTagDraftByLocId,
   tagSuggestions,
@@ -33,7 +45,7 @@ export function LocationsEditor({
 }: Props) {
   // local UI state
   const [search, setSearch] = useState("");
-  const [tagFilter, setTagFilter] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState<string>("");
 
   // keyboard navigation: active suggestion per location
   const [activeSugIdxByLocId, setActiveSugIdxByLocId] = useState<
@@ -66,69 +78,60 @@ export function LocationsEditor({
       loc.id.toLowerCase().includes(q) ||
       loc.name.toLowerCase().includes(q);
 
-    const tags = (loc.tags ?? []).map((t) => t.toLowerCase());
-    const matchesTag = !tf || tags.some((t) => t.includes(tf));
+    const tagsLower = (loc.tags ?? []).map((t) => t.trim().toLowerCase());
 
-    return matchesSearch && matchesTag;
+    const matchesTag = !tf || tagsLower.some((t) => t === tf);
+
+    const matchesCategory =
+      !categoryFilter ||
+      (loc.tags ?? []).some((t) => {
+        const key = t.trim().toLowerCase();
+        const cat = tagMeta?.[key]?.category ?? "";
+        return cat === categoryFilter;
+      });
+
+    return matchesSearch && matchesTag && matchesCategory;
   });
 
   // render
   return (
-    <section
-      style={{
-        marginTop: 16,
-        padding: 16,
-        border: "1px solid #444",
-        borderRadius: 8,
-      }}
-    >
-      <div
-        style={{ marginTop: 10, display: "flex", gap: 10, flexWrap: "wrap" }}
-      >
+    <section className="owt-panel owt-panel-lifted" style={{ marginTop: 24 }}>
+      {/* Top filters row */}
+      <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search by id or name…"
-          style={{
-            flex: 1,
-            minWidth: 220,
-            padding: 10,
-            borderRadius: 8,
-            border: "1px solid #666",
-            background: "#333",
-            color: "#eee",
-          }}
+          placeholder="Search locations..."
+          style={{ flex: 1 }}
         />
 
         <input
           value={tagFilter}
           onChange={(e) => setTagFilter(e.target.value)}
-          placeholder="Filter by tag…"
-          style={{
-            flex: 1,
-            minWidth: 220,
-            padding: 10,
-            borderRadius: 8,
-            border: "1px solid #666",
-            background: "#333",
-            color: "#eee",
-          }}
+          placeholder="Filter by tag..."
+          style={{ width: 200 }}
         />
+
+        <select
+          value={categoryFilter}
+          onChange={(e) => setCategoryFilter(e.target.value)}
+          style={{ width: 180 }}
+        >
+          <option value="">All categories</option>
+          <option value="system">system</option>
+          <option value="world">world</option>
+          <option value="biome">biome</option>
+          <option value="quest">quest</option>
+        </select>
       </div>
 
-      <h2>Locations Editor</h2>
+      <h2 style={{ marginTop: 0, marginBottom: 12 }}>Locations Editor</h2>
 
+      {/* Glowing Add Location button */}
       <button
         onClick={onAddLocation}
-        style={{
-          padding: "10px 14px",
-          borderRadius: 8,
-          border: "1px solid #666",
-          background: "transparent",
-          color: "#eee",
-          cursor: "pointer",
-          marginBottom: 12,
-        }}
+        className="owt-glow-btn"
+        style={{ marginBottom: 18 }}
       >
         + Add Location
       </button>
@@ -138,9 +141,27 @@ export function LocationsEditor({
           No locations match your filters
         </div>
       )}
-
+      {/* Active tag filter pill */}
+      {tagFilter && (
+        <div style={{ marginBottom: 10 }}>
+          <TagChip
+            tag={tagFilter}
+            tagMeta={tagMeta}
+            active
+            onClick={() => setTagFilter("")}
+            onRemove={() => setTagFilter("")}
+          />
+        </div>
+      )}
       {filteredLocations.map((loc) => {
-        // per-location helpers (safe inside map)
+        const tags = loc.tags ?? [];
+
+        const dedupedTags = tags.filter((tag, index, arr) => {
+          const key = tag.trim().toLowerCase();
+          return index === arr.findIndex((t) => t.trim().toLowerCase() === key);
+        });
+        const existingLower = new Set(dedupedTags.map((t) => t.toLowerCase()));
+        // per-location helpers
         function setActiveIdx(locId: string, idx: number) {
           setActiveSugIdxByLocId((prev) => ({ ...prev, [locId]: idx }));
         }
@@ -169,10 +190,6 @@ export function LocationsEditor({
           setTagDraftByLocId((prev) => ({ ...prev, [locId]: "" }));
           clearActiveIdx(locId);
         }
-
-        const existingLower = new Set(
-          (loc.tags ?? []).map((t) => t.toLowerCase())
-        );
         const draftLower = (tagDraftByLocId[loc.id] ?? "").trim().toLowerCase();
 
         // Base list: remove existing + filter by draft
@@ -216,18 +233,61 @@ export function LocationsEditor({
               <button
                 onClick={() => onDeleteLocation(loc.id)}
                 style={{
-                  padding: "6px 10px",
+                  padding: "6px 12px",
                   borderRadius: 8,
-                  border: "1px solid #666",
+                  border: "1px solid #f87171", // soft red outline
                   background: "transparent",
-                  color: "#eee",
+                  color: "#fca5a5", // light red text
                   cursor: "pointer",
+                  fontWeight: 600,
+                  transition: "all 140ms ease",
+                  boxShadow: "0 0 0px transparent",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.boxShadow =
+                    "0 0 12px rgba(248,113,113,0.6)"; // red glow
+                  e.currentTarget.style.transform = "translateY(-1px)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.boxShadow = "0 0 0px transparent";
+                  e.currentTarget.style.transform = "none";
+                }}
+                onMouseDown={(e) => {
+                  e.currentTarget.style.transform = "scale(0.95)"; // press
+                }}
+                onMouseUp={(e) => {
+                  e.currentTarget.style.transform = "translateY(-1px) scale(1)";
                 }}
               >
                 Delete
               </button>
             </div>
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: 6,
+                marginTop: 8,
+              }}
+            >
+              {(dedupedTags ?? []).map((t) => {
+                const key = t.trim().toLowerCase();
 
+                return (
+                  <TagChip
+                    key={`${loc.id}:${t}`}
+                    tag={t}
+                    tagMeta={tagMeta}
+                    onClick={() =>
+                      setTagFilter((prev) =>
+                        prev.trim().toLowerCase() === key ? "" : key
+                      )
+                    }
+                    onRemove={() => onRemoveTag(loc.id, t)}
+                  />
+                );
+              })}
+            </div>
             <label style={{ display: "block", marginTop: 10 }}>
               <div style={{ fontSize: 12, opacity: 0.8 }}>Location Name</div>
               <input
@@ -237,11 +297,6 @@ export function LocationsEditor({
                 }
                 style={{
                   width: "100%",
-                  padding: 10,
-                  borderRadius: 6,
-                  border: "1px solid #666",
-                  background: "#333",
-                  color: "#eee",
                 }}
               />
             </label>
@@ -255,11 +310,6 @@ export function LocationsEditor({
                 }
                 style={{
                   width: "100%",
-                  padding: 10,
-                  borderRadius: 6,
-                  border: "1px solid #666",
-                  background: "#333",
-                  color: "#eee",
                 }}
               >
                 {maps.map((m) => (
@@ -281,11 +331,6 @@ export function LocationsEditor({
                 }
                 style={{
                   width: "100%",
-                  padding: 10,
-                  borderRadius: 6,
-                  border: "1px solid #666",
-                  background: "#333",
-                  color: "#eee",
                 }}
               />
             </label>
@@ -353,11 +398,6 @@ export function LocationsEditor({
                   placeholder="type tag(s) + Enter (comma-separated ok)"
                   style={{
                     flex: 1,
-                    padding: 8,
-                    borderRadius: 8,
-                    border: "1px solid #666",
-                    background: "#333",
-                    color: "#eee",
                   }}
                 />
 
@@ -366,14 +406,91 @@ export function LocationsEditor({
                   style={{
                     padding: "8px 12px",
                     borderRadius: 8,
-                    border: "1px solid #666",
                     background: "transparent",
-                    color: "#eee",
+                    border: "1px solid #1e293b",
+                    boxShadow: "0 0 20px #3b82f677",
+                    color: "#0f172a",
                     cursor: "pointer",
+                    fontWeight: 600,
                   }}
                 >
                   Add
                 </button>
+              </div>
+
+              {/* QUICK TAG BUTTONS */}
+              <div
+                style={{
+                  marginTop: 8,
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: 8,
+                  fontSize: 12,
+                }}
+              >
+                {QUICK_TAGS.map((qt) => {
+                  const key = qt.toLowerCase();
+                  const hasIt = existingLower.has(key);
+                  const count = getTagCount(qt);
+
+                  const tagToRemove = tags.find(
+                    (t) => t.trim().toLowerCase() === key
+                  );
+
+                  const meta = tagMeta?.[key] ?? {};
+                  const color = meta.color ?? "#666";
+                  const desc = meta.description ?? qt;
+
+                  return (
+                    <button
+                      key={qt}
+                      type="button"
+                      title={desc}
+                      onClick={() => {
+                        if (hasIt && tagToRemove) {
+                          onRemoveTag(loc.id, tagToRemove);
+                        } else if (!hasIt) {
+                          onAddTag(loc.id, qt);
+                        }
+                      }}
+                      style={{
+                        padding: "4px 10px",
+                        borderRadius: 999,
+                        border: hasIt ? `1px solid ${color}` : "1px solid #555",
+                        background: hasIt ? color : "transparent",
+                        color: hasIt ? "#000" : "#ddd",
+                        cursor: "pointer",
+                        fontSize: 12,
+                        transition: "all 150ms ease",
+                        transform: hasIt ? "translateY(-1px)" : "none",
+                        boxShadow: hasIt ? `0 0 6px ${color}88` : "none",
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.boxShadow = `0 0 10px ${color}aa`;
+                        e.currentTarget.style.transform = "translateY(-2px)";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.boxShadow = hasIt
+                          ? `0 0 6px ${color}55`
+                          : "none";
+                        e.currentTarget.style.transform = "none";
+                      }}
+                      onMouseDown={(e) => {
+                        // press in: slightly smaller & closer
+                        e.currentTarget.style.transform =
+                          "translateY(0) scale(0.94)";
+                      }}
+                      onMouseUp={(e) => {
+                        // bounce back to “hovered” state
+                        e.currentTarget.style.transform =
+                          "translateY(-2px) scale(1)";
+                      }}
+                    >
+                      {hasIt ? "✓ " : "+ "}
+                      {qt} <span style={{ opacity: 0.7 }}>({count})</span>
+                    </button>
+                  );
+                })}
               </div>
 
               {/* Suggestions */}
@@ -423,38 +540,6 @@ export function LocationsEditor({
                   })}
                 </div>
               )}
-
-              <div
-                style={{
-                  marginTop: 8,
-                  display: "flex",
-                  gap: 8,
-                  flexWrap: "wrap",
-                }}
-              >
-                {(loc.tags ?? []).map((t) => (
-                  <button
-                    key={t}
-                    onClick={() => onRemoveTag(loc.id, t)}
-                    title="Click to remove"
-                    style={{
-                      padding: "6px 10px",
-                      borderRadius: 999,
-                      border: "1px solid #666",
-                      background: "transparent",
-                      color: "#eee",
-                      cursor: "pointer",
-                      opacity: 0.9,
-                    }}
-                  >
-                    {t} ✕
-                  </button>
-                ))}
-
-                {(loc.tags ?? []).length === 0 && (
-                  <div style={{ opacity: 0.7, fontSize: 12 }}>No tags yet</div>
-                )}
-              </div>
             </div>
           </div>
         );

@@ -1,3 +1,95 @@
+body {
+  margin: 0;
+  min-height: 100vh;
+  /* Fortnite-ish neon sky */
+  background:
+    /* big glows in the corners */ radial-gradient(
+      circle at 0% 0%,
+      rgba(56, 189, 248, 0.95) 0,
+      transparent 55%
+    ),
+    radial-gradient(
+      circle at 100% 0%,
+      rgba(244, 114, 182, 0.95) 0,
+      transparent 55%
+    ),
+    /* soft horizon glow near the bottom */
+      radial-gradient(
+        circle at 50% 120%,
+        rgba(56, 189, 248, 0.45) 0,
+        transparent 60%
+      ),
+    /* base night sky */
+      linear-gradient(to bottom, #020617 0%, #030712 40%, #020617 100%);
+  background-color: #020617;
+  background-attachment: fixed;
+  color: #f9fafb;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text",
+    "Segoe UI", sans-serif;
+
+  /* subtle holographic grid */
+  background-image: radial-gradient(
+      circle at 0% 0%,
+      rgba(56, 189, 248, 0.95) 0,
+      transparent 55%
+    ),
+    radial-gradient(
+      circle at 100% 0%,
+      rgba(244, 114, 182, 0.95) 0,
+      transparent 55%
+    ),
+    radial-gradient(
+      circle at 50% 120%,
+      rgba(56, 189, 248, 0.45) 0,
+      transparent 60%
+    ),
+    linear-gradient(to bottom, #020617 0%, #030712 40%, #020617 100%),
+    /* grid vertical */
+      linear-gradient(rgba(148, 163, 184, 0.08) 1px, transparent 1px),
+    /* grid horizontal */
+      linear-gradient(90deg, rgba(148, 163, 184, 0.08) 1px, transparent 1px);
+  background-size: auto, auto, auto, auto, 80px 80px, 80px 80px;
+  background-attachment: fixed;
+}
+input,
+select,
+button,
+textarea {
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: radial-gradient(
+    circle at top left,
+    #020617,
+    #0b1220 55%,
+    #020617
+  );
+  color: #e5e7eb;
+  font-size: 14px;
+  transition: border-color 140ms ease, box-shadow 140ms ease,
+    background 140ms ease, transform 80ms ease;
+}
+
+input::placeholder,
+select::placeholder,
+textarea::placeholder {
+  color: rgba(148, 163, 184, 0.9);
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: #38bdf8;
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.45);
+  outline: none;
+  background: radial-gradient(
+    circle at top left,
+    #020617,
+    #0f172a 60%,
+    #020617
+  );
+  transform: translateY(-1px);
+}
 #root {
   max-width: 1280px;
   margin: 0 auto;

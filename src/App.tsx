@@ -5,6 +5,7 @@ import type {
   GameWorldFile,
   MapData,
   Location as WorldLocation,
+  TagMeta,
 } from "./types/worldTypes";
 import { TagsEditor } from "./components/TagsEditor";
 import { Sidebar } from "./components/Sidebar";
@@ -36,15 +37,22 @@ type Issue = { level: "error" | "warning"; message: string };
 // component
 function isGameWorldFile(x: unknown): x is GameWorldFile {
   if (!x || typeof x !== "object") return false;
-
   const obj = x as Record<string, unknown>;
 
-  return (
-    Array.isArray(obj.maps) &&
-    Array.isArray(obj.locations) &&
-    typeof obj.world === "object" &&
-    obj.world !== null
-  );
+  if (!Array.isArray(obj.maps)) return false;
+  if (!Array.isArray(obj.locations)) return false;
+  if (typeof obj.world !== "object" || obj.world === null) return false;
+
+  // tagMeta is optional; if present, it must be an object
+  if (
+    "tagMeta" in obj &&
+    obj.tagMeta !== undefined &&
+    (typeof obj.tagMeta !== "object" || obj.tagMeta === null)
+  ) {
+    return false;
+  }
+
+  return true;
 }
 
 // ------------------------------
@@ -74,21 +82,26 @@ export default function App() {
   const [tagDraftByLocId, setTagDraftByLocId] = useState<
     Record<string, string>
   >({});
+  const [tagFilter, setTagFilter] = useState<string>("");
 
-  function ensureTagMeta(prev: GameWorldFile) {
-    return prev.tagMeta ? prev : { ...prev, tagMeta: {} };
+  function ensureTagMeta(
+    prev: GameWorldFile
+  ): GameWorldFile & { tagMeta: Record<string, TagMeta> } {
+    return {
+      ...prev,
+      tagMeta: prev.tagMeta ?? {},
+    };
   }
 
-  function updateTagMeta(
-    tag: string,
-    patch: Partial<{ description: string; category: string; color: string }>
-  ) {
+  function updateTagMeta(tag: string, patch: Partial<TagMeta>) {
     const key = tag.trim().toLowerCase();
     if (!key) return;
 
     setWorld((prev) => {
       const base = ensureTagMeta(prev);
-      const existing = base.tagMeta?.[key] ?? {};
+
+      const existing: TagMeta = base.tagMeta[key] ?? {};
+
       return {
         ...base,
         tagMeta: {
@@ -326,49 +339,76 @@ export default function App() {
       }),
     }));
   }
+  function normalizeTag(tag: string) {
+    return tag.trim().toLowerCase();
+  }
+
   function renameTagEverywhere(from: string, to: string) {
-    const src = from.trim();
-    const dst = to.trim();
-    if (!src || !dst) return;
+    const src = normalizeTag(from);
+    const dstKey = normalizeTag(to);
+    const dstLabel = to.trim();
+    if (!src || !dstKey || !dstLabel) return;
+    if (src === dstKey) return;
 
-    setWorld((prev) => ({
-      ...prev,
-      locations: prev.locations.map((l) => {
+    setWorld((prev) => {
+      // 1) update locations.tags
+      const nextLocations = prev.locations.map((l) => {
         const tags = l.tags ?? [];
-
-        // replace + dedupe (case-insensitive)
-        const next = tags.map((t) =>
-          t.toLowerCase() === src.toLowerCase() ? dst : t
+        const replaced = tags.map((t) =>
+          normalizeTag(t) === src ? dstLabel : t
         );
+
+        // dedupe case-insensitively
         const seen = new Set<string>();
         const deduped: string[] = [];
-        for (const t of next) {
-          const k = t.toLowerCase();
+        for (const t of replaced) {
+          const k = normalizeTag(t);
           if (seen.has(k)) continue;
           seen.add(k);
           deduped.push(t);
         }
+
         return { ...l, tags: deduped };
-      }),
-    }));
+      });
+
+      // 2) update tagMeta (move src -> dstKey)
+      const nextTagMeta = { ...(prev.tagMeta ?? {}) };
+      if (nextTagMeta[src]) {
+        nextTagMeta[dstKey] = {
+          ...(nextTagMeta[dstKey] ?? {}),
+          ...nextTagMeta[src],
+        };
+        delete nextTagMeta[src];
+      }
+
+      return {
+        ...prev,
+        locations: nextLocations,
+        tagMeta: nextTagMeta,
+      };
+    });
   }
 
   function deleteTagEverywhere(tag: string) {
-    const kill = tag.trim();
+    const kill = normalizeTag(tag);
     if (!kill) return;
 
-    setWorld((prev) => ({
-      ...prev,
-      locations: prev.locations.map((l) => ({
-        ...l,
-        tags: (l.tags ?? []).filter(
-          (t) => t.toLowerCase() !== kill.toLowerCase()
-        ),
-      })),
-    }));
+    setWorld((prev) => {
+      const nextTagMeta = { ...(prev.tagMeta ?? {}) };
+      delete nextTagMeta[kill];
+
+      return {
+        ...prev,
+        locations: prev.locations.map((l) => ({
+          ...l,
+          tags: (l.tags ?? []).filter((t) => normalizeTag(t) !== kill),
+        })),
+        tagMeta: nextTagMeta,
+      };
+    });
   }
 
-  // rename
+  // merge = rename (your current behavior)
   function mergeTagEverywhere(from: string, to: string) {
     renameTagEverywhere(from, to);
   }
@@ -402,8 +442,9 @@ export default function App() {
         display: "flex",
         minHeight: "100vh",
         fontFamily: "system-ui, sans-serif",
-        background: "#222",
         color: "#eee",
+        position: "relative",
+        zIndex: 1, // 👈 sits above body::before
       }}
     >
       {/* SIDEBAR */}
@@ -422,9 +463,32 @@ export default function App() {
       />
 
       {/* MAIN */}
-      <main style={{ flex: 1, padding: 24, maxWidth: 1000 }}>
-        <h1 style={{ marginTop: 0 }}>Open World Toolkit (Editor)</h1>
-
+      <main
+        style={{
+          flex: 1,
+          padding: "48px 32px",
+          maxWidth: "1100px",
+          margin: "0 auto",
+          background: "transparent",
+        }}
+      >
+        <h1
+          style={{
+            marginTop: 0,
+            marginBottom: "32px",
+            fontSize: "48px",
+            fontWeight: 800,
+            letterSpacing: "-0.5px",
+            color: "#f8faff",
+            textShadow: `
+      0 0 20px rgba(120,180,255,0.75),
+      0 0 40px rgba(120,180,255,0.55),
+      0 0 80px rgba(30,100,255,0.35)
+    `,
+          }}
+        >
+          Open World Toolkit (Editor)
+        </h1>
         {/* WORLD */}
         {activeTab === "world" && (
           <>
@@ -482,9 +546,12 @@ export default function App() {
           <LocationsEditor
             locations={syncedWorld.locations}
             maps={syncedWorld.maps}
+            tagMeta={syncedWorld.tagMeta ?? {}}
             tagDraftByLocId={tagDraftByLocId}
             setTagDraftByLocId={setTagDraftByLocId}
             tagSuggestions={tagSuggestions}
+            tagFilter={tagFilter}
+            setTagFilter={setTagFilter}
             onAddLocation={addLocation}
             onUpdateLocation={updateLocationById}
             onDeleteLocation={(locId) => {

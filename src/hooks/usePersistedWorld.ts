@@ -1,6 +1,15 @@
 import { useEffect, useState } from "react";
-import type { GameWorldFile } from "../types/worldTypes";
+import { tagMetaDefaults, type GameWorldFile } from "../types/worldTypes";
 
+function withDefaults(world: GameWorldFile): GameWorldFile {
+  return {
+    ...world,
+    tagMeta: {
+      ...tagMetaDefaults,
+      ...(world.tagMeta ?? {}),
+    },
+  };
+}
 export function usePersistedWorld(
   storageKey: string,
   initialWorld: GameWorldFile
@@ -8,11 +17,11 @@ export function usePersistedWorld(
   const [world, setWorld] = useState<GameWorldFile>(() => {
     try {
       const saved = localStorage.getItem(storageKey);
-      if (!saved) return initialWorld;
-      return JSON.parse(saved) as GameWorldFile;
+      if (!saved) return withDefaults(initialWorld);
+      return withDefaults(JSON.parse(saved) as GameWorldFile);
     } catch {
       console.warn("Failed to load saved world, using default");
-      return initialWorld;
+      return withDefaults(initialWorld);
     }
   });
 
@@ -30,7 +39,7 @@ export function usePersistedWorld(
     } catch (err) {
       console.warn("Failed to reset saved world", err);
     }
-    setWorld(initialWorld);
+    setWorld(withDefaults(initialWorld));
   }
 
   return { world, setWorld, resetSavedWorld };

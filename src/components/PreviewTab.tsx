@@ -1,12 +1,39 @@
+import type { CSSProperties } from "react";
 import type { GameWorldFile } from "../types/worldTypes";
 
 type Issue = { level: "error" | "warning"; message: string };
 
 type Props = {
-  world: GameWorldFile; // pass syncedWorld into this
+  world: GameWorldFile; // synced world
   locationById: Map<string, GameWorldFile["locations"][number]>;
   errorIssues: Issue[];
   warningIssues: Issue[];
+};
+
+// Convenience aliases
+type WorldMap = GameWorldFile["maps"][number];
+type WorldLocation = GameWorldFile["locations"][number];
+
+// “Preview-friendly” world shape that tolerates older / alternate fields
+type GameWorldForPreview = GameWorldFile & {
+  world?: { name?: string; description?: string };
+  name?: string;
+  description?: string;
+  worldName?: string;
+  worldDescription?: string;
+  tagMeta?: Record<string, { color?: string }>;
+};
+
+// Helper shape for locations that might have different coord/size fields
+type LocationForPreview = WorldLocation & {
+  x?: number;
+  y?: number;
+  z?: number;
+  posX?: number;
+  posY?: number;
+  posZ?: number;
+  position?: { x?: number; y?: number; z?: number };
+  size?: number;
 };
 
 export function PreviewTab({
@@ -15,128 +42,299 @@ export function PreviewTab({
   errorIssues,
   warningIssues,
 }: Props) {
+  const gw = world as GameWorldForPreview;
+
+  // World name / description (supporting several possible field names)
+  const worldName: string =
+    gw.worldName ?? gw.name ?? gw.world?.name ?? "(unnamed world)";
+
+  const worldDescription: string =
+    gw.worldDescription ?? gw.description ?? gw.world?.description ?? "";
+
+  // Maps + locations
+  const maps: WorldMap[] = Array.isArray(gw.maps) ? gw.maps : [];
+
+  const locations: WorldLocation[] =
+    Array.isArray(gw.locations) && gw.locations.length > 0
+      ? gw.locations
+      : Array.from(locationById.values());
+
+  const tagMeta: Record<string, { color?: string }> = gw.tagMeta ?? {};
+
+  // Helpers – no `any` anywhere ✨
+  function formatCoords(loc: WorldLocation): string {
+    const l = loc as LocationForPreview;
+    const x = l.x ?? l.posX ?? l.position?.x ?? 0;
+    const y = l.y ?? l.posY ?? l.position?.y ?? 0;
+    const z = l.z ?? l.posZ ?? l.position?.z ?? 0;
+    return `(${x}, ${y}, ${z})`;
+  }
+
+  function getRadius(loc: WorldLocation): number | string {
+    const l = loc as LocationForPreview;
+    return l.radius ?? l.size ?? "?";
+  }
+
+  // Shared row styles so nested vs flat lists stay aligned
+  const nestedLocationRowStyle: CSSProperties = {
+    marginTop: 4,
+    marginLeft: 16, // rows nested under a map
+    fontSize: 13,
+    display: "flex",
+    alignItems: "center",
+    gap: 12,
+    lineHeight: "1.25",
+    flexWrap: "nowrap",
+  };
+
+  const flatLocationRowStyle: CSSProperties = {
+    ...nestedLocationRowStyle,
+    marginLeft: 8, // slightly less indent for "All Locations"
+  };
+
+  const hasIssues = errorIssues.length > 0 || warningIssues.length > 0;
+
   return (
-    <section
-      style={{
-        marginTop: 16,
-        padding: 16,
-        border: "1px solid #444",
-        borderRadius: 8,
-      }}
-    >
-      <h2>Preview</h2>
+    <section className="owt-panel owt-panel-lifted" style={{ marginTop: 24 }}>
+      <h2 style={{ marginTop: 0 }}>Preview</h2>
 
-      {(errorIssues.length > 0 || warningIssues.length > 0) && (
-        <div style={{ marginTop: 12 }}>
-          {errorIssues.length > 0 && (
+      {/* Issue summary */}
+      {hasIssues && (
+        <div
+          className="owt-subpanel"
+          style={{
+            marginTop: 12,
+            marginBottom: 12,
+            padding: 12,
+            display: "flex",
+            flexDirection: "column",
+            gap: 8,
+          }}
+        >
+          <div style={{ fontSize: 14, fontWeight: 600 }}>
+            Issues in current world
+          </div>
+
+          <div style={{ fontSize: 13, opacity: 0.9 }}>
+            {errorIssues.length > 0 && (
+              <span style={{ color: "#fca5a5", marginRight: 12 }}>
+                ● {errorIssues.length} error
+                {errorIssues.length === 1 ? "" : "s"}
+              </span>
+            )}
+            {warningIssues.length > 0 && (
+              <span style={{ color: "#facc15" }}>
+                ● {warningIssues.length} warning
+                {warningIssues.length === 1 ? "" : "s"}
+              </span>
+            )}
+          </div>
+
+          {[...errorIssues, ...warningIssues].map((issue, idx) => (
             <div
+              key={idx}
               style={{
-                padding: 12,
-                border: "1px solid #ff4d4d",
-                borderRadius: 8,
-                marginBottom: 10,
+                fontSize: 12,
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                opacity: 0.95,
               }}
             >
-              <div style={{ fontWeight: 700, marginBottom: 6 }}>Errors</div>
-              <ul style={{ margin: 0, paddingLeft: 18 }}>
-                {errorIssues.map((e, idx) => (
-                  <li key={idx} style={{ opacity: 0.95 }}>
-                    {e.message}
-                  </li>
-                ))}
-              </ul>
+              <span
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: 999,
+                  background: issue.level === "error" ? "#f87171" : "#facc15",
+                }}
+              />
+              <span
+                style={{
+                  color: issue.level === "error" ? "#fecaca" : "#fef9c3",
+                }}
+              >
+                [{issue.level}] {issue.message}
+              </span>
             </div>
-          )}
-
-          {warningIssues.length > 0 && (
-            <div
-              style={{
-                padding: 12,
-                border: "1px solid #ffb020",
-                borderRadius: 8,
-              }}
-            >
-              <div style={{ fontWeight: 700, marginBottom: 6 }}>Warnings</div>
-              <ul style={{ margin: 0, paddingLeft: 18 }}>
-                {warningIssues.map((w, idx) => (
-                  <li key={idx} style={{ opacity: 0.95 }}>
-                    {w.message}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
+          ))}
         </div>
       )}
 
+      {/* Main preview content */}
       <div
+        className="owt-subpanel"
         style={{
-          marginTop: 12,
-          padding: 12,
-          border: "1px solid #555",
-          borderRadius: 8,
+          marginTop: hasIssues ? 8 : 16,
+          display: "flex",
+          flexDirection: "column",
+          gap: 24,
         }}
       >
-        <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 6 }}>
-          World
-        </div>
-        <div style={{ fontSize: 18, fontWeight: 600 }}>{world.world.name}</div>
-        <div style={{ marginTop: 6, opacity: 0.9 }}>
-          {world.world.description}
-        </div>
-      </div>
+        {/* WORLD SUMMARY */}
+        <section>
+          <h3 style={{ marginTop: 0, marginBottom: 8 }}>World</h3>
+          <div style={{ fontWeight: 600 }}>{worldName}</div>
+          {worldDescription && (
+            <div
+              style={{
+                marginTop: 4,
+                opacity: 0.9,
+                fontSize: 14,
+                maxWidth: 640,
+              }}
+            >
+              {worldDescription}
+            </div>
+          )}
+        </section>
 
-      <div style={{ marginTop: 16 }}>
-        <h3 style={{ marginBottom: 8 }}>Maps</h3>
+        {/* MAPS */}
+        <section>
+          <h3 style={{ marginBottom: 8 }}>Maps</h3>
+          {maps.length === 0 ? (
+            <div style={{ opacity: 0.8, fontSize: 14 }}>
+              No maps yet. Add one on the Maps tab.
+            </div>
+          ) : (
+            <ul
+              style={{
+                listStyle: "none",
+                paddingLeft: 0,
+                margin: 0,
+                display: "flex",
+                flexDirection: "column",
+                gap: 12,
+              }}
+            >
+              {maps.map((m) => {
+                const mapLocs = locations.filter((loc) => loc.mapId === m.id);
+                return (
+                  <li key={m.id}>
+                    <div style={{ fontWeight: 600 }}>
+                      {m.name || m.id}{" "}
+                      <span
+                        style={{
+                          opacity: 0.7,
+                          fontWeight: 400,
+                        }}
+                      >
+                        — {m.description || "Describe this region..."} (locs:{" "}
+                        {mapLocs.length})
+                      </span>
+                    </div>
 
-        <ul style={{ margin: 0, paddingLeft: 18 }}>
-          {world.maps.map((m) => {
-            const locs = (m.locations ?? [])
-              .map((id) => locationById.get(id))
-              .filter((x): x is NonNullable<typeof x> => Boolean(x));
+                    {mapLocs.map((loc) => (
+                      <div key={loc.id} style={nestedLocationRowStyle}>
+                        <span>
+                          • {loc.name || loc.id} @ {formatCoords(loc)} — radius{" "}
+                          {getRadius(loc)}
+                        </span>
 
-            return (
-              <li key={m.id} style={{ marginBottom: 10 }}>
-                <div>
-                  <strong>{m.name}</strong> — {m.description} (locs: {locs.length})
-                </div>
+                        {loc.tags && loc.tags.length > 0 && (
+                          <span
+                            style={{
+                              display: "flex",
+                              flexWrap: "wrap",
+                              gap: 6,
+                              marginLeft: 8,
+                            }}
+                          >
+                            {loc.tags.map((tag) => {
+                              const key = tag.trim().toLowerCase();
+                              const resolvedColor =
+                                tagMeta[key]?.color || undefined;
 
-                {locs.length > 0 ? (
-                  <ul
-                    style={{
-                      marginTop: 6,
-                      paddingLeft: 18,
-                      opacity: 0.9,
-                    }}
-                  >
-                    {locs.map((l) => (
-                      <li key={l.id}>
-                        {l.name} @ ({l.position.x}, {l.position.y}, {l.position.z}) — radius{" "}
-                        {l.radius}
-                      </li>
+                              return (
+                                <span key={tag} className="owt-tag-chip">
+                                  <span
+                                    className="owt-tag-chip-dot"
+                                    style={
+                                      resolvedColor
+                                        ? { background: resolvedColor }
+                                        : undefined
+                                    }
+                                  />
+                                  {tag}
+                                </span>
+                              );
+                            })}
+                          </span>
+                        )}
+                      </div>
                     ))}
-                  </ul>
-                ) : (
-                  <div style={{ marginTop: 6, opacity: 0.7 }}>
-                    No locations assigned yet
-                  </div>
-                )}
-              </li>
-            );
-          })}
-        </ul>
-      </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </section>
 
-      <div style={{ marginTop: 16 }}>
-        <h3>All Locations</h3>
-        <ul style={{ margin: 0, paddingLeft: 18 }}>
-          {world.locations.map((l) => (
-            <li key={l.id}>
-              {l.name} @ ({l.position.x}, {l.position.y}, {l.position.z}) — map:{" "}
-              {l.mapId}
-            </li>
-          ))}
-        </ul>
+        {/* ALL LOCATIONS (flat list) */}
+        <section>
+          <h3 style={{ marginBottom: 8 }}>All Locations</h3>
+          {locations.length === 0 ? (
+            <div style={{ opacity: 0.8, fontSize: 14 }}>
+              No locations yet. Add some on the Locations tab.
+            </div>
+          ) : (
+            <ul
+              style={{
+                listStyle: "none",
+                paddingLeft: 0,
+                margin: 0,
+                display: "flex",
+                flexDirection: "column",
+                gap: 8,
+              }}
+            >
+              {locations.map((loc) => {
+                const map = maps.find((m) => m.id === loc.mapId);
+
+                return (
+                  <li key={loc.id}>
+                    <div style={flatLocationRowStyle}>
+                      <span>
+                        • {loc.name || loc.id} @ {formatCoords(loc)} — map:{" "}
+                        {map ? map.name || map.id : loc.mapId}
+                      </span>
+                      {loc.tags && loc.tags.length > 0 && (
+                        <span
+                          style={{
+                            display: "inline-flex",
+                            flexWrap: "wrap",
+                            gap: 6,
+                            marginLeft: 8,
+                          }}
+                        >
+                          {loc.tags.map((tag) => {
+                            const key = tag.trim().toLowerCase();
+                            const resolvedColor =
+                              tagMeta[key]?.color || undefined;
+
+                            return (
+                              <span key={tag} className="owt-tag-chip">
+                                <span
+                                  className="owt-tag-chip-dot"
+                                  style={
+                                    resolvedColor
+                                      ? { background: resolvedColor }
+                                      : undefined
+                                  }
+                                />
+                                {tag}
+                              </span>
+                            );
+                          })}
+                        </span>
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </section>
       </div>
     </section>
   );

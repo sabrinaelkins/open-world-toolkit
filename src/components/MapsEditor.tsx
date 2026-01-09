@@ -14,27 +14,13 @@ export function MapsEditor({
   onDeleteMap,
 }: Props) {
   return (
-    <section
-      style={{
-        marginTop: 16,
-        padding: 16,
-        border: "1px solid #444",
-        borderRadius: 8,
-      }}
-    >
+    <section className="owt-panel owt-panel-lifted" style={{ marginTop: 24 }}>
       <h2>Maps Editor</h2>
 
       <button
         onClick={onAddMap}
-        style={{
-          padding: "10px 14px",
-          borderRadius: 8,
-          border: "1px solid #666",
-          background: "transparent",
-          color: "#eee",
-          cursor: "pointer",
-          marginBottom: 12,
-        }}
+        className="owt-glow-btn"
+        style={{ marginBottom: 16 }}
       >
         + Add Map
       </button>
@@ -49,6 +35,7 @@ export function MapsEditor({
             marginBottom: 12,
           }}
         >
+          {/* header row */}
           <div
             style={{
               display: "flex",
@@ -57,37 +44,52 @@ export function MapsEditor({
             }}
           >
             <div style={{ fontWeight: 700 }}>{m.id}</div>
+
+            {/* Delete button - red outline + glow */}
             <button
               onClick={() => onDeleteMap(m.id)}
               style={{
-                padding: "6px 10px",
+                padding: "6px 12px",
                 borderRadius: 8,
-                border: "1px solid #666",
+                border: "1px solid #f87171",
                 background: "transparent",
-                color: "#eee",
+                color: "#fca5a5",
                 cursor: "pointer",
+                fontWeight: 600,
+                transition: "all 140ms ease",
+                boxShadow: "0 0 0px transparent",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.boxShadow =
+                  "0 0 12px rgba(248,113,113,0.6)";
+                e.currentTarget.style.transform = "translateY(-1px)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.boxShadow = "0 0 0px transparent";
+                e.currentTarget.style.transform = "none";
+              }}
+              onMouseDown={(e) => {
+                e.currentTarget.style.transform = "scale(0.95)";
+              }}
+              onMouseUp={(e) => {
+                e.currentTarget.style.transform = "translateY(-1px) scale(1)";
               }}
             >
               Delete
             </button>
           </div>
 
+          {/* Map name */}
           <label style={{ display: "block", marginTop: 10 }}>
             <div style={{ fontSize: 12, opacity: 0.8 }}>Map Name</div>
             <input
               value={m.name}
               onChange={(e) => onUpdateMap(m.id, { name: e.target.value })}
-              style={{
-                width: "100%",
-                padding: 10,
-                borderRadius: 6,
-                border: "1px solid #666",
-                background: "#333",
-                color: "#eee",
-              }}
+              style={{ width: "100%" }}
             />
           </label>
 
+          {/* Description */}
           <label style={{ display: "block", marginTop: 10 }}>
             <div style={{ fontSize: 12, opacity: 0.8 }}>Description</div>
             <input
@@ -95,17 +97,11 @@ export function MapsEditor({
               onChange={(e) =>
                 onUpdateMap(m.id, { description: e.target.value })
               }
-              style={{
-                width: "100%",
-                padding: 10,
-                borderRadius: 6,
-                border: "1px solid #666",
-                background: "#333",
-                color: "#eee",
-              }}
+              style={{ width: "100%" }}
             />
           </label>
 
+          {/* Size row */}
           <div style={{ marginTop: 10, display: "flex", gap: 10 }}>
             <label style={{ flex: 1 }}>
               <div style={{ fontSize: 12, opacity: 0.8 }}>Width</div>
@@ -120,14 +116,7 @@ export function MapsEditor({
                     },
                   })
                 }
-                style={{
-                  width: "100%",
-                  padding: 10,
-                  borderRadius: 6,
-                  border: "1px solid #666",
-                  background: "#333",
-                  color: "#eee",
-                }}
+                style={{ width: "100%" }}
               />
             </label>
 
@@ -144,14 +133,7 @@ export function MapsEditor({
                     },
                   })
                 }
-                style={{
-                  width: "100%",
-                  padding: 10,
-                  borderRadius: 6,
-                  border: "1px solid #666",
-                  background: "#333",
-                  color: "#eee",
-                }}
+                style={{ width: "100%" }}
               />
             </label>
 
@@ -167,14 +149,7 @@ export function MapsEditor({
                     },
                   })
                 }
-                style={{
-                  width: "100%",
-                  padding: 10,
-                  borderRadius: 6,
-                  border: "1px solid #666",
-                  background: "#333",
-                  color: "#eee",
-                }}
+                style={{ width: "100%" }}
               />
             </label>
           </div>

@@ -27,11 +27,110 @@ export interface Location {
   tags: string[];
 }
 // Types
+export type TagCategory =
+  | "system"
+  | "world"
+  | "faction"
+  | "gameplay"
+  | "poi"
+  | "biome"
+  | "quest"
+  | "location"
+  | "combat"
+  | "loot"
+  | "custom";
 
 export type TagMeta = {
   description?: string;
-  category?: string;
+  category?: TagCategory;
   color?: string; // hex like "#22c55e"
+};
+export const tagMetaDefaults: Record<string, TagMeta> = {
+  spawn: {
+    description: "Spawn point for player or entities",
+    category: "system",
+    color: "#8ab4f8",
+  },
+  enemy: {
+    description: "Enemy encounter zone",
+    category: "combat",
+    color: "#ff6b6b",
+  },
+  town: {
+    description: "Town or settlement",
+    category: "world",
+    color: "#ffd166",
+  },
+  quest: {
+    description: "Quest-related location",
+    category: "quest",
+    color: "#c7f464",
+  },
+  boss: {
+    description: "Boss encounter area",
+    category: "combat",
+    color: "#f78fb3",
+  },
+  shop: {
+    description: "Merchant or shop location",
+    category: "poi",
+    color: "#81ecec",
+  },
+  camp: {
+    description: "Small rest or camp area",
+    category: "world",
+    color: "#fab1a0",
+  },
+  city: {
+    description: "Large city hub",
+    category: "world",
+    color: "#74b9ff",
+  },
+  danger: {
+    description: "Marked danger zone",
+    category: "system",
+    color: "#ff7675",
+  },
+  desert: {
+    description: "Desert biome",
+    category: "biome",
+    color: "#ffeaa7",
+  },
+  dungeon: {
+    description: "Dungeon interior / cave",
+    category: "poi",
+    color: "#a29bfe",
+  },
+  forest: {
+    description: "Forest biome",
+    category: "biome",
+    color: "#55efc4",
+  },
+  mountain: {
+    description: "Mountain biome",
+    category: "biome",
+    color: "#b2bec3",
+  },
+  poi: {
+    description: "Point of interest",
+    category: "poi",
+    color: "#fdcb6e",
+  },
+  npc: {
+    description: "NPC-related location",
+    category: "world",
+    color: "#00cec9",
+  },
+  safe: {
+    description: "Safe zone",
+    category: "system",
+    color: "#6c5ce7",
+  },
+  water: {
+    description: "Water biome",
+    category: "biome",
+    color: "#74b9ff",
+  },
 };
 export type GameWorldFile = {
   version: number;
