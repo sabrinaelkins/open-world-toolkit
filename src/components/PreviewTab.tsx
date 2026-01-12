@@ -34,6 +34,7 @@ type LocationForPreview = WorldLocation & {
   posZ?: number;
   position?: { x?: number; y?: number; z?: number };
   size?: number;
+  radius?: number;
 };
 
 export function PreviewTab({
@@ -57,7 +58,7 @@ export function PreviewTab({
   const locations: WorldLocation[] =
     Array.isArray(gw.locations) && gw.locations.length > 0
       ? gw.locations
-      : Array.from(locationById.values());
+      : Array.from(locationById?.values?.() ?? []);
 
   const tagMeta: Record<string, { color?: string }> = gw.tagMeta ?? {};
 
@@ -78,21 +79,35 @@ export function PreviewTab({
   // Shared row styles so nested vs flat lists stay aligned
   const nestedLocationRowStyle: CSSProperties = {
     marginTop: 4,
-    marginLeft: 16, // rows nested under a map
+    marginLeft: 16,
     fontSize: 13,
+    lineHeight: "1.3",
     display: "flex",
-    alignItems: "center",
-    gap: 12,
-    lineHeight: "1.25",
-    flexWrap: "nowrap",
+    flexDirection: "column",
+    alignItems: "flex-start",
+    gap: 3,
   };
 
   const flatLocationRowStyle: CSSProperties = {
     ...nestedLocationRowStyle,
-    marginLeft: 8, // slightly less indent for "All Locations"
+    marginLeft: 8,
   };
 
   const hasIssues = errorIssues.length > 0 || warningIssues.length > 0;
+
+  const rowTextStyle: CSSProperties = {
+    minWidth: 0,
+    overflowWrap: "anywhere",
+    wordBreak: "break-word",
+    whiteSpace: "normal",
+  };
+
+  const rowChipsStyle: CSSProperties = {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: 6,
+    paddingLeft: 10,
+  };
 
   return (
     <section className="owt-panel owt-panel-lifted" style={{ marginTop: 24 }}>
@@ -226,24 +241,36 @@ export function PreviewTab({
 
                     {mapLocs.map((loc) => (
                       <div key={loc.id} style={nestedLocationRowStyle}>
-                        <span>
-                          • {loc.name || loc.id} @ {formatCoords(loc)} — radius{" "}
-                          {getRadius(loc)}
-                        </span>
-
-                        {loc.tags && loc.tags.length > 0 && (
+                        {/* left column: text */}
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "baseline",
+                            gap: 8,
+                          }}
+                        >
                           <span
                             style={{
-                              display: "flex",
-                              flexWrap: "wrap",
-                              gap: 6,
-                              marginLeft: 8,
+                              width: 14,
+                              flex: "0 0 14px",
+                              opacity: 0.9,
                             }}
                           >
+                            •
+                          </span>
+
+                          <div style={rowTextStyle}>
+                            {loc.name || loc.id} @ {formatCoords(loc)} — radius{" "}
+                            {getRadius(loc)}
+                          </div>
+                        </div>
+
+                        {/* right column: chips */}
+                        {loc.tags && loc.tags.length > 0 && (
+                          <div style={rowChipsStyle}>
                             {loc.tags.map((tag) => {
                               const key = tag.trim().toLowerCase();
-                              const resolvedColor =
-                                tagMeta[key]?.color || undefined;
+                              const resolvedColor = tagMeta[key]?.color;
 
                               return (
                                 <span key={tag} className="owt-tag-chip">
@@ -259,7 +286,7 @@ export function PreviewTab({
                                 </span>
                               );
                             })}
-                          </span>
+                          </div>
                         )}
                       </div>
                     ))}
@@ -294,23 +321,37 @@ export function PreviewTab({
                 return (
                   <li key={loc.id}>
                     <div style={flatLocationRowStyle}>
-                      <span>
-                        • {loc.name || loc.id} @ {formatCoords(loc)} — map:{" "}
-                        {map ? map.name || map.id : loc.mapId}
-                      </span>
-                      {loc.tags && loc.tags.length > 0 && (
+                      {/* left column: text */}
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "baseline",
+                          gap: 8,
+                        }}
+                      >
                         <span
-                          style={{
-                            display: "inline-flex",
-                            flexWrap: "wrap",
-                            gap: 6,
-                            marginLeft: 8,
-                          }}
+                          style={{ width: 14, flex: "0 0 14px", opacity: 0.9 }}
                         >
+                          •
+                        </span>
+
+                        <div style={rowTextStyle}>
+                          {loc.name || loc.id} @ {formatCoords(loc)} — radius{" "}
+                          {getRadius(loc)}
+                          {map && (
+                            <span style={{ opacity: 0.7 }}>
+                              {" "}
+                              — map: <strong>{map.name || map.id}</strong>
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      {/* right column: chips */}
+                      {loc.tags && loc.tags.length > 0 && (
+                        <div style={rowChipsStyle}>
                           {loc.tags.map((tag) => {
                             const key = tag.trim().toLowerCase();
-                            const resolvedColor =
-                              tagMeta[key]?.color || undefined;
+                            const resolvedColor = tagMeta[key]?.color;
 
                             return (
                               <span key={tag} className="owt-tag-chip">
@@ -326,7 +367,7 @@ export function PreviewTab({
                               </span>
                             );
                           })}
-                        </span>
+                        </div>
                       )}
                     </div>
                   </li>

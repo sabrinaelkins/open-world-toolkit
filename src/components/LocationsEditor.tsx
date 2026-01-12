@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import type { Dispatch, SetStateAction, KeyboardEvent } from "react";
+import { useMemo, useState, useCallback } from "react";
+import type { Dispatch, SetStateAction } from "react";
 import type {
   Location as WorldLocation,
   MapData,
@@ -14,8 +14,8 @@ type Props = {
   maps: MapData[];
   tagMeta: Record<string, TagMeta>;
 
-  tagFilter: string;
-  setTagFilter: Dispatch<SetStateAction<string>>;
+  tagFilters: string[];
+  setTagFilters: Dispatch<SetStateAction<string[]>>;
 
   tagDraftByLocId: Record<string, string>;
   setTagDraftByLocId: Dispatch<SetStateAction<Record<string, string>>>;
@@ -28,12 +28,13 @@ type Props = {
   onAddTag: (locId: string, rawTag: string) => void;
   onRemoveTag: (locId: string, tag: string) => void;
 };
+
 export function LocationsEditor({
   locations,
   maps,
   tagMeta,
-  tagFilter,
-  setTagFilter,
+  tagFilters,
+  setTagFilters,
   tagDraftByLocId,
   setTagDraftByLocId,
   tagSuggestions,
@@ -43,57 +44,131 @@ export function LocationsEditor({
   onAddTag,
   onRemoveTag,
 }: Props) {
+  // ------------------------------
   // local UI state
+  // ------------------------------
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("");
+  const [tagMatchMode, setTagMatchMode] = useState<"any" | "all">("any");
 
+  const [tagFilterDraft, setTagFilterDraft] = useState("");
+  const [filterActiveIdx, setFilterActiveIdx] = useState(-1);
   // keyboard navigation: active suggestion per location
   const [activeSugIdxByLocId, setActiveSugIdxByLocId] = useState<
     Record<string, number>
   >({});
 
-  // A) tag counts across all locations (top-level hook ✅)
+  // ------------------------------
+  // helpers (stable)
+  // ------------------------------
+  const norm = useCallback((tag: string) => tag.trim().toLowerCase(), []);
+
+  // tag counts across all locations
   const tagCountByLower = useMemo(() => {
     const m = new Map<string, number>();
     for (const l of locations) {
       for (const t of l.tags ?? []) {
-        const k = t.toLowerCase();
+        const k = norm(t);
+        if (!k) continue;
         m.set(k, (m.get(k) ?? 0) + 1);
       }
     }
     return m;
-  }, [locations]);
+  }, [locations, norm]);
 
-  function getTagCount(tag: string) {
-    return tagCountByLower.get(tag.toLowerCase()) ?? 0;
-  }
+  const getTagCount = useCallback(
+    (tag: string) => tagCountByLower.get(norm(tag)) ?? 0,
+    [tagCountByLower, norm]
+  );
 
-  // filtering logic
-  const filteredLocations = locations.filter((loc) => {
-    const q = search.trim().toLowerCase();
-    const tf = tagFilter.trim().toLowerCase();
+  const toggleTagFilter = useCallback(
+    (tag: string) => {
+      const k = norm(tag);
+      if (!k) return;
 
-    const matchesSearch =
-      !q ||
-      loc.id.toLowerCase().includes(q) ||
-      loc.name.toLowerCase().includes(q);
-
-    const tagsLower = (loc.tags ?? []).map((t) => t.trim().toLowerCase());
-
-    const matchesTag = !tf || tagsLower.some((t) => t === tf);
-
-    const matchesCategory =
-      !categoryFilter ||
-      (loc.tags ?? []).some((t) => {
-        const key = t.trim().toLowerCase();
-        const cat = tagMeta?.[key]?.category ?? "";
-        return cat === categoryFilter;
+      setTagFilters((prev) => {
+        const has = prev.some((x) => norm(x) === k);
+        return has ? prev.filter((x) => norm(x) !== k) : [...prev, k];
       });
+    },
+    [norm, setTagFilters]
+  );
 
-    return matchesSearch && matchesTag && matchesCategory;
-  });
+  const commitTagFilter = useCallback(
+    (tag: string) => {
+      toggleTagFilter(tag);
+      setTagFilterDraft("");
+    },
+    [toggleTagFilter]
+  );
 
+  // ------------------------------
+  // filtering logic
+  // ------------------------------
+  const filteredLocations = useMemo(() => {
+    const q = norm(search);
+    const activeFilters = tagFilters.map(norm).filter(Boolean);
+
+    return locations.filter((loc) => {
+      const tagsLower = (loc.tags ?? []).map(norm);
+
+      const matchesTags =
+        activeFilters.length === 0 ||
+        (tagMatchMode === "all"
+          ? activeFilters.every((tf) => tagsLower.includes(tf)) // AND
+          : activeFilters.some((tf) => tagsLower.includes(tf))); // OR
+
+      const matchesSearch =
+        !q || norm(loc.id).includes(q) || norm(loc.name).includes(q);
+
+      const matchesCategory =
+        !categoryFilter ||
+        (loc.tags ?? []).some((t) => {
+          const key = norm(t);
+          const cat = tagMeta?.[key]?.category ?? "";
+          return cat === categoryFilter;
+        });
+
+      return matchesSearch && matchesTags && matchesCategory;
+    });
+  }, [
+    locations,
+    search,
+    tagFilters,
+    tagMatchMode,
+    categoryFilter,
+    tagMeta,
+    norm,
+  ]);
+
+  // ------------------------------
+  // Tag-filter autocomplete (data only)
+  // ------------------------------
+  const filterSuggestions = useMemo(() => {
+    const q = norm(tagFilterDraft);
+    if (!q) return [];
+
+    const existing = new Set(tagFilters.map(norm));
+
+    const list = tagSuggestions
+      .map((t) => t.trim())
+      .filter(Boolean)
+      .filter((t) => !existing.has(norm(t)))
+      .filter((t) => norm(t).includes(q));
+
+    list.sort((a, b) => {
+      const ca = getTagCount(a);
+      const cb = getTagCount(b);
+      if (cb !== ca) return cb - ca;
+      return a.localeCompare(b);
+    });
+
+    return list.slice(0, 12);
+  }, [tagFilterDraft, tagSuggestions, tagFilters, getTagCount, norm]);
+
+  // ------------------------------
   // render
+  // ------------------------------
   return (
     <section className="owt-panel owt-panel-lifted" style={{ marginTop: 24 }}>
       {/* Top filters row */}
@@ -105,12 +180,138 @@ export function LocationsEditor({
           style={{ flex: 1 }}
         />
 
-        <input
-          value={tagFilter}
-          onChange={(e) => setTagFilter(e.target.value)}
-          placeholder="Filter by tag..."
-          style={{ width: 200 }}
-        />
+        {/* Tag filter + autocomplete */}
+        <div style={{ display: "flex", flexDirection: "column" }}>
+          <input
+            value={tagFilterDraft}
+            onChange={(e) => {
+              setTagFilterDraft(e.target.value);
+              setFilterActiveIdx(-1); // reset suggestion highlight when typing
+            }}
+            onKeyDown={(e) => {
+              // SHIFT + ENTER → toggle ANY / ALL
+              if (e.key === "Enter" && e.shiftKey) {
+                e.preventDefault();
+                setTagMatchMode((m) => (m === "any" ? "all" : "any"));
+                return;
+              }
+
+              if (e.key === "ArrowDown") {
+                if (filterSuggestions.length === 0) return;
+                e.preventDefault();
+                setFilterActiveIdx((i) =>
+                  i < 0 ? 0 : (i + 1) % filterSuggestions.length
+                );
+                return;
+              }
+
+              if (e.key === "ArrowUp") {
+                if (filterSuggestions.length === 0) return;
+                e.preventDefault();
+                setFilterActiveIdx((i) =>
+                  i < 0
+                    ? filterSuggestions.length - 1
+                    : (i - 1 + filterSuggestions.length) %
+                      filterSuggestions.length
+                );
+                return;
+              }
+
+              if (e.key === "Escape") {
+                e.preventDefault();
+                setTagFilterDraft("");
+                setFilterActiveIdx(-1);
+                return;
+              }
+
+              if (e.key === "Enter") {
+                e.preventDefault();
+
+                // If a suggestion is highlighted, choose it
+                if (
+                  filterActiveIdx >= 0 &&
+                  filterActiveIdx < filterSuggestions.length
+                ) {
+                  commitTagFilter(filterSuggestions[filterActiveIdx]);
+                  setFilterActiveIdx(-1);
+                  return;
+                }
+
+                // Otherwise commit whatever they typed
+                commitTagFilter(tagFilterDraft);
+                setFilterActiveIdx(-1);
+              }
+            }}
+            placeholder={
+              tagMatchMode === "any"
+                ? "Add tag filter + Enter (ANY match)"
+                : "Add tag filter + Enter (ALL match)"
+            }
+            style={{
+              width: 260,
+              border:
+                tagMatchMode === "all" ? "1px solid #38bdf8" : "1px solid #666",
+            }}
+          />
+
+          {filterSuggestions.length > 0 && (
+            <div
+              style={{
+                marginTop: 6,
+                display: "flex",
+                flexWrap: "wrap",
+                gap: 6,
+              }}
+            >
+              {filterSuggestions.map((t, idx) => {
+                const isActive = idx === filterActiveIdx;
+
+                return (
+                  <button
+                    key={t}
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => commitTagFilter(t)}
+                    style={{
+                      padding: "4px 10px",
+                      borderRadius: 999,
+                      border: isActive ? "1px solid #eee" : "1px solid #555",
+                      background: isActive ? "#444" : "transparent",
+                      color: isActive ? "#fff" : "#ddd",
+                      cursor: "pointer",
+                      fontSize: 12,
+                    }}
+                    aria-selected={isActive}
+                  >
+                    {isActive ? "▶ " : "+ "}
+                    {t}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <button
+          type="button"
+          onClick={() => setTagMatchMode((m) => (m === "any" ? "all" : "any"))}
+          style={{
+            padding: "8px 12px",
+            borderRadius: 8,
+            border: "1px solid #666",
+            background: "transparent",
+            color: "#eee",
+            cursor: "pointer",
+            whiteSpace: "nowrap",
+          }}
+          title={
+            tagMatchMode === "any"
+              ? "Match ANY selected tag (OR)"
+              : "Match ALL selected tags (AND)"
+          }
+        >
+          {tagMatchMode === "any" ? "ANY tag (OR)" : "ALL tags (AND)"}
+        </button>
 
         <select
           value={categoryFilter}
@@ -127,7 +328,6 @@ export function LocationsEditor({
 
       <h2 style={{ marginTop: 0, marginBottom: 12 }}>Locations Editor</h2>
 
-      {/* Glowing Add Location button */}
       <button
         onClick={onAddLocation}
         className="owt-glow-btn"
@@ -141,27 +341,90 @@ export function LocationsEditor({
           No locations match your filters
         </div>
       )}
-      {/* Active tag filter pill */}
-      {tagFilter && (
-        <div style={{ marginBottom: 10 }}>
-          <TagChip
-            tag={tagFilter}
-            tagMeta={tagMeta}
-            active
-            onClick={() => setTagFilter("")}
-            onRemove={() => setTagFilter("")}
-          />
+
+      {/* Active Filters Bar */}
+      {(tagFilters.length > 0 || categoryFilter) && (
+        <div
+          style={{
+            marginBottom: 12,
+            display: "flex",
+            gap: 8,
+            flexWrap: "wrap",
+            alignItems: "center",
+          }}
+        >
+          <div style={{ fontSize: 12, opacity: 0.75 }}>Active filters:</div>
+
+          {tagFilters.map((t) => (
+            <TagChip
+              key={t}
+              tag={t}
+              tagMeta={tagMeta}
+              active
+              onClick={() => toggleTagFilter(t)}
+              onRemove={() => toggleTagFilter(t)}
+            />
+          ))}
+
+          {categoryFilter && (
+            <span
+              style={{
+                padding: "6px 10px",
+                borderRadius: 999,
+                border: "1px solid #666",
+                background: "rgba(255,255,255,0.06)",
+                fontSize: 12,
+              }}
+            >
+              category: <strong>{categoryFilter}</strong>
+              <button
+                onClick={() => setCategoryFilter("")}
+                style={{
+                  marginLeft: 8,
+                  border: "none",
+                  background: "transparent",
+                  color: "#eee",
+                  cursor: "pointer",
+                  opacity: 0.85,
+                }}
+                title="Clear category filter"
+              >
+                ×
+              </button>
+            </span>
+          )}
+
+          <button
+            onClick={() => {
+              setTagFilters([]);
+              setCategoryFilter("");
+              setTagFilterDraft("");
+            }}
+            style={{
+              marginLeft: "auto",
+              padding: "8px 12px",
+              borderRadius: 8,
+              border: "1px solid #666",
+              background: "transparent",
+              color: "#eee",
+              cursor: "pointer",
+            }}
+          >
+            Clear all
+          </button>
         </div>
       )}
+
       {filteredLocations.map((loc) => {
         const tags = loc.tags ?? [];
 
         const dedupedTags = tags.filter((tag, index, arr) => {
-          const key = tag.trim().toLowerCase();
-          return index === arr.findIndex((t) => t.trim().toLowerCase() === key);
+          const k = norm(tag);
+          return index === arr.findIndex((t) => norm(t) === k);
         });
-        const existingLower = new Set(dedupedTags.map((t) => t.toLowerCase()));
-        // per-location helpers
+
+        const existingLower = new Set(dedupedTags.map(norm));
+
         function setActiveIdx(locId: string, idx: number) {
           setActiveSugIdxByLocId((prev) => ({ ...prev, [locId]: idx }));
         }
@@ -181,8 +444,8 @@ export function LocationsEditor({
 
           const seen = new Set<string>();
           for (const p of parts) {
-            const k = p.toLowerCase();
-            if (seen.has(k)) continue;
+            const k = norm(p);
+            if (!k || seen.has(k)) continue;
             seen.add(k);
             onAddTag(locId, p);
           }
@@ -190,16 +453,13 @@ export function LocationsEditor({
           setTagDraftByLocId((prev) => ({ ...prev, [locId]: "" }));
           clearActiveIdx(locId);
         }
-        const draftLower = (tagDraftByLocId[loc.id] ?? "").trim().toLowerCase();
 
-        // Base list: remove existing + filter by draft
+        const draftLower = norm(tagDraftByLocId[loc.id] ?? "");
+
         let suggestions = tagSuggestions
-          .filter((t) => !existingLower.has(t.toLowerCase()))
-          .filter((t) =>
-            draftLower ? t.toLowerCase().includes(draftLower) : true
-          );
+          .filter((t) => !existingLower.has(norm(t)))
+          .filter((t) => (draftLower ? norm(t).includes(draftLower) : true));
 
-        // B) sort by popularity (count desc), then alpha
         suggestions.sort((a, b) => {
           const ca = getTagCount(a);
           const cb = getTagCount(b);
@@ -209,7 +469,6 @@ export function LocationsEditor({
 
         suggestions = suggestions.slice(0, 12);
 
-        const sCount = suggestions.length;
         const activeIdx = activeSugIdxByLocId[loc.id] ?? -1;
 
         return (
@@ -235,33 +494,18 @@ export function LocationsEditor({
                 style={{
                   padding: "6px 12px",
                   borderRadius: 8,
-                  border: "1px solid #f87171", // soft red outline
+                  border: "1px solid #f87171",
                   background: "transparent",
-                  color: "#fca5a5", // light red text
+                  color: "#fca5a5",
                   cursor: "pointer",
                   fontWeight: 600,
-                  transition: "all 140ms ease",
-                  boxShadow: "0 0 0px transparent",
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.boxShadow =
-                    "0 0 12px rgba(248,113,113,0.6)"; // red glow
-                  e.currentTarget.style.transform = "translateY(-1px)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.boxShadow = "0 0 0px transparent";
-                  e.currentTarget.style.transform = "none";
-                }}
-                onMouseDown={(e) => {
-                  e.currentTarget.style.transform = "scale(0.95)"; // press
-                }}
-                onMouseUp={(e) => {
-                  e.currentTarget.style.transform = "translateY(-1px) scale(1)";
                 }}
               >
                 Delete
               </button>
             </div>
+
+            {/* tags row */}
             <div
               style={{
                 display: "flex",
@@ -270,24 +514,25 @@ export function LocationsEditor({
                 marginTop: 8,
               }}
             >
-              {(dedupedTags ?? []).map((t) => {
-                const key = t.trim().toLowerCase();
+              {dedupedTags.map((t) => {
+                const k = norm(t);
+                const isActive = tagFilters.some((x) => norm(x) === k);
+                const isDim = tagFilters.length > 0 && !isActive;
 
                 return (
                   <TagChip
                     key={`${loc.id}:${t}`}
                     tag={t}
                     tagMeta={tagMeta}
-                    onClick={() =>
-                      setTagFilter((prev) =>
-                        prev.trim().toLowerCase() === key ? "" : key
-                      )
-                    }
+                    active={isActive}
+                    dim={isDim}
+                    onClick={() => toggleTagFilter(t)}
                     onRemove={() => onRemoveTag(loc.id, t)}
                   />
                 );
               })}
             </div>
+
             <label style={{ display: "block", marginTop: 10 }}>
               <div style={{ fontSize: 12, opacity: 0.8 }}>Location Name</div>
               <input
@@ -295,9 +540,7 @@ export function LocationsEditor({
                 onChange={(e) =>
                   onUpdateLocation(loc.id, { name: e.target.value })
                 }
-                style={{
-                  width: "100%",
-                }}
+                style={{ width: "100%" }}
               />
             </label>
 
@@ -308,9 +551,7 @@ export function LocationsEditor({
                 onChange={(e) =>
                   onUpdateLocation(loc.id, { mapId: e.target.value })
                 }
-                style={{
-                  width: "100%",
-                }}
+                style={{ width: "100%" }}
               >
                 {maps.map((m) => (
                   <option key={m.id} value={m.id}>
@@ -329,13 +570,11 @@ export function LocationsEditor({
                 onChange={(e) =>
                   onUpdateLocation(loc.id, { radius: Number(e.target.value) })
                 }
-                style={{
-                  width: "100%",
-                }}
+                style={{ width: "100%" }}
               />
             </label>
 
-            {/* TAGS */}
+            {/* TAGS input */}
             <div style={{ marginTop: 10 }}>
               <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 6 }}>
                 Tags
@@ -351,38 +590,43 @@ export function LocationsEditor({
                     }));
                     clearActiveIdx(loc.id);
                   }}
-                  onKeyDown={(e: KeyboardEvent<HTMLInputElement>) => {
-                    if (e.key === "ArrowDown") {
-                      if (sCount === 0) return;
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") {
                       e.preventDefault();
-                      const next = activeIdx < 0 ? 0 : (activeIdx + 1) % sCount;
-                      setActiveIdx(loc.id, next);
+                      setTagDraftByLocId((prev) => ({ ...prev, [loc.id]: "" }));
+                      clearActiveIdx(loc.id);
+                      return;
+                    }
+
+                    if (e.key === "ArrowDown") {
+                      if (suggestions.length === 0) return;
+                      e.preventDefault();
+                      setActiveIdx(
+                        loc.id,
+                        activeIdx < 0 ? 0 : (activeIdx + 1) % suggestions.length
+                      );
                       return;
                     }
 
                     if (e.key === "ArrowUp") {
-                      if (sCount === 0) return;
+                      if (suggestions.length === 0) return;
                       e.preventDefault();
-                      const next =
+                      setActiveIdx(
+                        loc.id,
                         activeIdx < 0
-                          ? sCount - 1
-                          : (activeIdx - 1 + sCount) % sCount;
-                      setActiveIdx(loc.id, next);
-                      return;
-                    }
-
-                    if (e.key === "Escape") {
-                      clearActiveIdx(loc.id);
+                          ? suggestions.length - 1
+                          : (activeIdx - 1 + suggestions.length) %
+                              suggestions.length
+                      );
                       return;
                     }
 
                     if (e.key === "Enter") {
                       e.preventDefault();
 
-                      // choose highlighted suggestion
-                      if (activeIdx >= 0 && activeIdx < sCount) {
-                        const chosen = suggestions[activeIdx];
-                        onAddTag(loc.id, chosen);
+                      // if highlighted suggestion, add it
+                      if (activeIdx >= 0 && activeIdx < suggestions.length) {
+                        onAddTag(loc.id, suggestions[activeIdx]);
                         setTagDraftByLocId((prev) => ({
                           ...prev,
                           [loc.id]: "",
@@ -391,14 +635,13 @@ export function LocationsEditor({
                         return;
                       }
 
-                      // otherwise commit typed tags (comma-supported)
+                      // otherwise commit comma-separated draft
                       commitDraftTags(loc.id);
+                      return;
                     }
                   }}
                   placeholder="type tag(s) + Enter (comma-separated ok)"
-                  style={{
-                    flex: 1,
-                  }}
+                  style={{ flex: 1 }}
                 />
 
                 <button
@@ -407,9 +650,8 @@ export function LocationsEditor({
                     padding: "8px 12px",
                     borderRadius: 8,
                     background: "transparent",
-                    border: "1px solid #1e293b",
-                    boxShadow: "0 0 20px #3b82f677",
-                    color: "#0f172a",
+                    border: "1px solid #666",
+                    color: "#eee",
                     cursor: "pointer",
                     fontWeight: 600,
                   }}
@@ -429,13 +671,11 @@ export function LocationsEditor({
                 }}
               >
                 {QUICK_TAGS.map((qt) => {
-                  const key = qt.toLowerCase();
+                  const key = norm(qt);
                   const hasIt = existingLower.has(key);
                   const count = getTagCount(qt);
 
-                  const tagToRemove = tags.find(
-                    (t) => t.trim().toLowerCase() === key
-                  );
+                  const tagToRemove = tags.find((t) => norm(t) === key);
 
                   const meta = tagMeta?.[key] ?? {};
                   const color = meta.color ?? "#666";
@@ -447,11 +687,9 @@ export function LocationsEditor({
                       type="button"
                       title={desc}
                       onClick={() => {
-                        if (hasIt && tagToRemove) {
+                        if (hasIt && tagToRemove)
                           onRemoveTag(loc.id, tagToRemove);
-                        } else if (!hasIt) {
-                          onAddTag(loc.id, qt);
-                        }
+                        else if (!hasIt) onAddTag(loc.id, qt);
                       }}
                       style={{
                         padding: "4px 10px",
@@ -461,29 +699,6 @@ export function LocationsEditor({
                         color: hasIt ? "#000" : "#ddd",
                         cursor: "pointer",
                         fontSize: 12,
-                        transition: "all 150ms ease",
-                        transform: hasIt ? "translateY(-1px)" : "none",
-                        boxShadow: hasIt ? `0 0 6px ${color}88` : "none",
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.boxShadow = `0 0 10px ${color}aa`;
-                        e.currentTarget.style.transform = "translateY(-2px)";
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.boxShadow = hasIt
-                          ? `0 0 6px ${color}55`
-                          : "none";
-                        e.currentTarget.style.transform = "none";
-                      }}
-                      onMouseDown={(e) => {
-                        // press in: slightly smaller & closer
-                        e.currentTarget.style.transform =
-                          "translateY(0) scale(0.94)";
-                      }}
-                      onMouseUp={(e) => {
-                        // bounce back to “hovered” state
-                        e.currentTarget.style.transform =
-                          "translateY(-2px) scale(1)";
                       }}
                     >
                       {hasIt ? "✓ " : "+ "}

@@ -82,7 +82,7 @@ export default function App() {
   const [tagDraftByLocId, setTagDraftByLocId] = useState<
     Record<string, string>
   >({});
-  const [tagFilter, setTagFilter] = useState<string>("");
+  const [tagFilters, setTagFilters] = useState<string[]>([]);
 
   function ensureTagMeta(
     prev: GameWorldFile
@@ -350,6 +350,14 @@ export default function App() {
     if (!src || !dstKey || !dstLabel) return;
     if (src === dstKey) return;
 
+    // ✅ keep UI filters in sync (ONE TIME)
+    setTagFilters((prev) => {
+      const next = prev.map((t) =>
+        normalizeTag(t) === src ? dstKey : normalizeTag(t)
+      );
+      return Array.from(new Set(next)).filter(Boolean);
+    });
+
     setWorld((prev) => {
       // 1) update locations.tags
       const nextLocations = prev.locations.map((l) => {
@@ -393,6 +401,9 @@ export default function App() {
     const kill = normalizeTag(tag);
     if (!kill) return;
 
+    // ✅ keep UI filters in sync
+    setTagFilters((prev) => prev.filter((t) => normalizeTag(t) !== kill));
+
     setWorld((prev) => {
       const nextTagMeta = { ...(prev.tagMeta ?? {}) };
       delete nextTagMeta[kill];
@@ -425,6 +436,7 @@ export default function App() {
       }
 
       setWorld(parsed);
+      setTagFilters([]);
       alert("Imported successfully");
     } catch (err) {
       console.error("Import failed:", err);
@@ -487,7 +499,7 @@ export default function App() {
     `,
           }}
         >
-          Open World Toolkit (Editor)
+          <h1 style={{ textAlign: "center" }}>Open World Toolkit (Editor)</h1>
         </h1>
         {/* WORLD */}
         {activeTab === "world" && (
@@ -547,16 +559,16 @@ export default function App() {
             locations={syncedWorld.locations}
             maps={syncedWorld.maps}
             tagMeta={syncedWorld.tagMeta ?? {}}
+            tagFilters={tagFilters}
+            setTagFilters={setTagFilters}
             tagDraftByLocId={tagDraftByLocId}
             setTagDraftByLocId={setTagDraftByLocId}
             tagSuggestions={tagSuggestions}
-            tagFilter={tagFilter}
-            setTagFilter={setTagFilter}
             onAddLocation={addLocation}
             onUpdateLocation={updateLocationById}
             onDeleteLocation={(locId) => {
               if (
-                confirm(`Delete location "${locId}"? This cannot be undone.`)
+                confirm(`Delete location '${locId}'? This cannot be undone.`)
               ) {
                 deleteLocationById(locId);
               }

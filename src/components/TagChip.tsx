@@ -6,39 +6,52 @@ type Props = {
   onRemove?: () => void;
   onClick?: () => void;
   active?: boolean;
+  dim?: boolean;
 };
 
-export function TagChip({ tag, tagMeta, onRemove, onClick, active }: Props) {
-  const key = tag.trim().toLowerCase();
-  const meta = (tagMeta?.[key] ?? {}) as TagMeta;
+function normalizeTag(tag: string) {
+  return tag.trim().toLowerCase();
+}
+
+export function TagChip({
+  tag,
+  tagMeta,
+  onRemove,
+  onClick,
+  active,
+  dim,
+}: Props) {
+  const tagKey = normalizeTag(tag);
+  const meta = (tagMeta?.[tagKey] ?? {}) as TagMeta;
   const color = meta.color;
 
   return (
-<span
-  onClick={onClick}
-  title={meta.description ?? tag}
-  onMouseEnter={(e) => {
-    e.currentTarget.style.boxShadow = `0 0 10px ${color}aa`;
-    e.currentTarget.style.transform = "translateY(-2px)";
-  }}
-  onMouseLeave={(e) => {
-    e.currentTarget.style.boxShadow = "none";
-    e.currentTarget.style.transform = "none";
-  }}
-  style={{
-    display: "inline-flex",
-    alignItems: "center",
-    gap: 8,
-    padding: "6px 10px",
-    borderRadius: 999,
-    border: active ? `1px solid ${color}` : "1px solid #666",
-    background: active ? color + "22" : "transparent",
-    color: "#eee",
-    cursor: onClick ? "pointer" : "default",
-    opacity: active ? 1 : 0.95,
-    userSelect: "none",
-    transition: "all 150ms ease",
-  }}
+    <span
+      onClick={onClick}
+      title={meta.description ?? tag}
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 8,
+        padding: "6px 10px",
+        borderRadius: 999,
+        border: active ? "1px solid #eee" : "1px solid #666",
+        background: active ? "#3a3a3a" : "transparent",
+        color: "#eee",
+        cursor: onClick ? "pointer" : "default",
+        opacity: dim ? 0.35 : 0.95,
+        userSelect: "none",
+        transition:
+          "opacity 120ms ease, background 120ms ease, border-color 120ms ease",
+      }}
+      onMouseEnter={(e) => {
+        if (!onClick || active) return;
+        (e.currentTarget as HTMLSpanElement).style.background = "#2f2f2f";
+      }}
+      onMouseLeave={(e) => {
+        if (!onClick || active) return;
+        (e.currentTarget as HTMLSpanElement).style.background = "transparent";
+      }}
     >
       <span
         style={{
