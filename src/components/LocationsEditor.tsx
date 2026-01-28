@@ -1,4 +1,4 @@
-import { useMemo, useState, useCallback } from "react";
+import { useMemo, useState, useCallback, useRef, useLayoutEffect } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import type {
   Location as WorldLocation,
@@ -7,7 +7,7 @@ import type {
 } from "../types/worldTypes";
 import { TagChip } from "./TagChip";
 
-const QUICK_TAGS = ["spawn", "enemy", "town", "quest", "boss", "shop"];
+const QUICK_TAGS = ["spawn", "enemy", "town", "quest", "boss", "shop"] as const;
 
 type Props = {
   locations: WorldLocation[];
@@ -19,6 +19,7 @@ type Props = {
 
   tagDraftByLocId: Record<string, string>;
   setTagDraftByLocId: Dispatch<SetStateAction<Record<string, string>>>;
+
   tagSuggestions: string[];
 
   onAddLocation: () => void;
@@ -53,33 +54,28 @@ export function LocationsEditor({
 
   const [tagFilterDraft, setTagFilterDraft] = useState("");
   const [filterActiveIdx, setFilterActiveIdx] = useState(-1);
-  // keyboard navigation: active suggestion per location
-  const [activeSugIdxByLocId, setActiveSugIdxByLocId] = useState<
-    Record<string, number>
-  >({});
+
+  // keyboard navigation: active suggestion key per location
+  const [activeSugKeyByLocId, setActiveSugKeyByLocId] = useState<
+    Record<string, string | null>
+  >(() => Object.create(null));
+
+  // DOM refs for each location's suggestions row
+  const sugRowRefByLocId = useRef<Record<string, HTMLDivElement | null>>(
+    Object.create(null)
+  );
+
+  // which locId last got keyboard nav (for scroll-into-view)
+  const lastNavLocIdRef = useRef<string | null>(null);
 
   // ------------------------------
   // helpers (stable)
   // ------------------------------
   const norm = useCallback((tag: string) => tag.trim().toLowerCase(), []);
 
-  // tag counts across all locations
-  const tagCountByLower = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const l of locations) {
-      for (const t of l.tags ?? []) {
-        const k = norm(t);
-        if (!k) continue;
-        m.set(k, (m.get(k) ?? 0) + 1);
-      }
-    }
-    return m;
-  }, [locations, norm]);
-
-  const getTagCount = useCallback(
-    (tag: string) => tagCountByLower.get(norm(tag)) ?? 0,
-    [tagCountByLower, norm]
-  );
+  const clearActiveKey = useCallback((locId: string) => {
+    setActiveSugKeyByLocId((prev) => ({ ...prev, [locId]: null }));
+  }, []);
 
   const toggleTagFilter = useCallback(
     (tag: string) => {
@@ -96,10 +92,32 @@ export function LocationsEditor({
 
   const commitTagFilter = useCallback(
     (tag: string) => {
-      toggleTagFilter(tag);
+      const raw = tag.trim();
+      if (!raw) return;
+      toggleTagFilter(raw);
       setTagFilterDraft("");
     },
     [toggleTagFilter]
+  );
+
+  // ------------------------------
+  // tag usage counts (for sorting)
+  // ------------------------------
+  const tagCountByLower = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const l of locations) {
+      for (const t of l.tags ?? []) {
+        const k = norm(t);
+        if (!k) continue;
+        m.set(k, (m.get(k) ?? 0) + 1);
+      }
+    }
+    return m;
+  }, [locations, norm]);
+
+  const getTagCount = useCallback(
+    (tag: string) => tagCountByLower.get(norm(tag)) ?? 0,
+    [tagCountByLower, norm]
   );
 
   // ------------------------------
@@ -167,6 +185,40 @@ export function LocationsEditor({
   }, [tagFilterDraft, tagSuggestions, tagFilters, getTagCount, norm]);
 
   // ------------------------------
+  // keep active suggestion chip visible after keyboard nav
+  // ------------------------------
+  useLayoutEffect(() => {
+    const locId = lastNavLocIdRef.current;
+    if (!locId) return;
+
+    const key = activeSugKeyByLocId[locId];
+    if (!key) return;
+
+    const row = sugRowRefByLocId.current[locId];
+    if (!row) return;
+
+    const btn = row.querySelector<HTMLButtonElement>(
+      `button[data-sug-key="${key}"]`
+    );
+    if (!btn) return;
+
+    const pad = 8;
+
+    const left = btn.offsetLeft;
+    const right = left + btn.offsetWidth;
+
+    const visibleLeft = row.scrollLeft;
+    const visibleRight = visibleLeft + row.clientWidth;
+
+    // keep-visible only (no smooth, no centering)
+    if (left < visibleLeft + pad) {
+      row.scrollLeft = Math.max(0, left - pad);
+    } else if (right > visibleRight - pad) {
+      row.scrollLeft = right - row.clientWidth + pad;
+    }
+  }, [activeSugKeyByLocId]);
+
+  // ------------------------------
   // render
   // ------------------------------
   return (
@@ -186,10 +238,9 @@ export function LocationsEditor({
             value={tagFilterDraft}
             onChange={(e) => {
               setTagFilterDraft(e.target.value);
-              setFilterActiveIdx(-1); // reset suggestion highlight when typing
+              setFilterActiveIdx(-1);
             }}
             onKeyDown={(e) => {
-              // SHIFT + ENTER → toggle ANY / ALL
               if (e.key === "Enter" && e.shiftKey) {
                 e.preventDefault();
                 setTagMatchMode((m) => (m === "any" ? "all" : "any"));
@@ -200,7 +251,7 @@ export function LocationsEditor({
                 if (filterSuggestions.length === 0) return;
                 e.preventDefault();
                 setFilterActiveIdx((i) =>
-                  i < 0 ? 0 : (i + 1) % filterSuggestions.length
+                  i < 0 ? 0 : Math.min(i + 1, filterSuggestions.length - 1)
                 );
                 return;
               }
@@ -209,10 +260,7 @@ export function LocationsEditor({
                 if (filterSuggestions.length === 0) return;
                 e.preventDefault();
                 setFilterActiveIdx((i) =>
-                  i < 0
-                    ? filterSuggestions.length - 1
-                    : (i - 1 + filterSuggestions.length) %
-                      filterSuggestions.length
+                  i < 0 ? filterSuggestions.length - 1 : Math.max(i - 1, 0)
                 );
                 return;
               }
@@ -227,7 +275,6 @@ export function LocationsEditor({
               if (e.key === "Enter") {
                 e.preventDefault();
 
-                // If a suggestion is highlighted, choose it
                 if (
                   filterActiveIdx >= 0 &&
                   filterActiveIdx < filterSuggestions.length
@@ -237,7 +284,6 @@ export function LocationsEditor({
                   return;
                 }
 
-                // Otherwise commit whatever they typed
                 commitTagFilter(tagFilterDraft);
                 setFilterActiveIdx(-1);
               }
@@ -270,7 +316,7 @@ export function LocationsEditor({
                   <button
                     key={t}
                     type="button"
-                    onMouseDown={(e) => e.preventDefault()}
+                    onMouseDown={(ev) => ev.preventDefault()}
                     onClick={() => commitTagFilter(t)}
                     style={{
                       padding: "4px 10px",
@@ -399,6 +445,7 @@ export function LocationsEditor({
               setTagFilters([]);
               setCategoryFilter("");
               setTagFilterDraft("");
+              setFilterActiveIdx(-1);
             }}
             style={{
               marginLeft: "auto",
@@ -418,6 +465,7 @@ export function LocationsEditor({
       {filteredLocations.map((loc) => {
         const tags = loc.tags ?? [];
 
+        // de-dupe tags by normalized key (for display + suggestion exclusion)
         const dedupedTags = tags.filter((tag, index, arr) => {
           const k = norm(tag);
           return index === arr.findIndex((t) => norm(t) === k);
@@ -425,15 +473,7 @@ export function LocationsEditor({
 
         const existingLower = new Set(dedupedTags.map(norm));
 
-        function setActiveIdx(locId: string, idx: number) {
-          setActiveSugIdxByLocId((prev) => ({ ...prev, [locId]: idx }));
-        }
-
-        function clearActiveIdx(locId: string) {
-          setActiveSugIdxByLocId((prev) => ({ ...prev, [locId]: -1 }));
-        }
-
-        function commitDraftTags(locId: string) {
+        const commitDraftTags = (locId: string) => {
           const raw = (tagDraftByLocId[locId] ?? "").trim();
           if (!raw) return;
 
@@ -451,12 +491,15 @@ export function LocationsEditor({
           }
 
           setTagDraftByLocId((prev) => ({ ...prev, [locId]: "" }));
-          clearActiveIdx(locId);
-        }
+          clearActiveKey(locId);
+        };
 
         const draftLower = norm(tagDraftByLocId[loc.id] ?? "");
 
+        // suggestions for this location
         let suggestions = tagSuggestions
+          .map((t) => t.trim())
+          .filter(Boolean)
           .filter((t) => !existingLower.has(norm(t)))
           .filter((t) => (draftLower ? norm(t).includes(draftLower) : true));
 
@@ -467,9 +510,46 @@ export function LocationsEditor({
           return a.localeCompare(b);
         });
 
+        // de-dupe suggestions by normalized key
+        const seenSug = new Set<string>();
+        suggestions = suggestions.filter((t) => {
+          const k = norm(t);
+          if (!k || seenSug.has(k)) return false;
+          seenSug.add(k);
+          return true;
+        });
+
         suggestions = suggestions.slice(0, 12);
 
-        const activeIdx = activeSugIdxByLocId[loc.id] ?? -1;
+        // keys in exact render order
+        const keys = suggestions.map((t) => norm(t));
+
+        // safe active key (never invalid if list changes)
+        const rawActiveKey = activeSugKeyByLocId[loc.id] ?? null;
+        const safeActiveKey =
+          rawActiveKey && keys.includes(rawActiveKey) ? rawActiveKey : null;
+
+        const moveActive = (locId: string, dir: -1 | 1) => {
+          if (keys.length === 0) return;
+
+          lastNavLocIdRef.current = locId;
+
+          setActiveSugKeyByLocId((prev) => {
+            const cur = prev[locId] ?? null;
+            const curIdx = cur ? keys.indexOf(cur) : -1;
+
+            if (curIdx === -1) {
+              const nextIdx = dir === 1 ? 0 : keys.length - 1;
+              return { ...prev, [locId]: keys[nextIdx] };
+            }
+
+            const nextIdx = Math.max(
+              0,
+              Math.min(curIdx + dir, keys.length - 1)
+            );
+            return { ...prev, [locId]: keys[nextIdx] };
+          });
+        };
 
         return (
           <div
@@ -588,56 +668,54 @@ export function LocationsEditor({
                       ...prev,
                       [loc.id]: e.target.value,
                     }));
-                    clearActiveIdx(loc.id);
+                    clearActiveKey(loc.id);
                   }}
                   onKeyDown={(e) => {
+                    const locId = loc.id;
+
                     if (e.key === "Escape") {
                       e.preventDefault();
-                      setTagDraftByLocId((prev) => ({ ...prev, [loc.id]: "" }));
-                      clearActiveIdx(loc.id);
+                      e.stopPropagation();
+                      setTagDraftByLocId((prev) => ({ ...prev, [locId]: "" }));
+                      clearActiveKey(locId);
                       return;
                     }
 
                     if (e.key === "ArrowDown") {
-                      if (suggestions.length === 0) return;
                       e.preventDefault();
-                      setActiveIdx(
-                        loc.id,
-                        activeIdx < 0 ? 0 : (activeIdx + 1) % suggestions.length
-                      );
+                      e.stopPropagation();
+                      moveActive(locId, 1);
                       return;
                     }
 
                     if (e.key === "ArrowUp") {
-                      if (suggestions.length === 0) return;
                       e.preventDefault();
-                      setActiveIdx(
-                        loc.id,
-                        activeIdx < 0
-                          ? suggestions.length - 1
-                          : (activeIdx - 1 + suggestions.length) %
-                              suggestions.length
-                      );
+                      e.stopPropagation();
+                      moveActive(locId, -1);
                       return;
                     }
 
                     if (e.key === "Enter") {
                       e.preventDefault();
+                      e.stopPropagation();
 
-                      // if highlighted suggestion, add it
-                      if (activeIdx >= 0 && activeIdx < suggestions.length) {
-                        onAddTag(loc.id, suggestions[activeIdx]);
+                      const key = safeActiveKey;
+                      const chosen =
+                        key != null
+                          ? suggestions.find((t) => norm(t) === key) ?? null
+                          : null;
+
+                      if (chosen) {
+                        onAddTag(locId, chosen);
                         setTagDraftByLocId((prev) => ({
                           ...prev,
-                          [loc.id]: "",
+                          [locId]: "",
                         }));
-                        clearActiveIdx(loc.id);
+                        clearActiveKey(locId);
                         return;
                       }
 
-                      // otherwise commit comma-separated draft
-                      commitDraftTags(loc.id);
-                      return;
+                      commitDraftTags(locId);
                     }
                   }}
                   placeholder="type tag(s) + Enter (comma-separated ok)"
@@ -711,44 +789,68 @@ export function LocationsEditor({
               {/* Suggestions */}
               {suggestions.length > 0 && (
                 <div
+                  ref={(el) => {
+                    sugRowRefByLocId.current[loc.id] = el;
+                  }}
                   style={{
                     marginTop: 8,
                     display: "flex",
-                    flexWrap: "wrap",
+                    flexWrap: "nowrap",
                     gap: 8,
+                    overflowX: "auto",
+                    overflowY: "hidden",
                     opacity: draftLower ? 1 : 0.55,
                   }}
                 >
-                  {suggestions.map((t, idx) => {
-                    const isActive = idx === activeIdx;
+                  {suggestions.map((t) => {
+                    const k = norm(t);
+                    const isActive = safeActiveKey === k;
                     const count = getTagCount(t);
 
                     return (
                       <button
-                        key={t}
-                        onMouseDown={(e) => e.preventDefault()}
+                        key={k}
+                        data-sug-key={k}
+                        onMouseDown={(ev) => ev.preventDefault()}
                         onClick={() => {
                           onAddTag(loc.id, t);
                           setTagDraftByLocId((prev) => ({
                             ...prev,
                             [loc.id]: "",
                           }));
-                          clearActiveIdx(loc.id);
+                          clearActiveKey(loc.id);
                         }}
                         style={{
                           padding: "6px 10px",
                           borderRadius: 999,
-                          border: isActive
-                            ? "1px solid #eee"
-                            : "1px solid #555",
+                          border: "1px solid #555",
+                          outline: isActive ? "1px solid #eee" : "none",
+                          outlineOffset: -1,
                           background: isActive ? "#444" : "transparent",
                           color: isActive ? "#fff" : "#ddd",
                           cursor: "pointer",
                           fontSize: 12,
+                          whiteSpace: "nowrap",
+                          flex: "0 0 auto",
+                          display: "inline-flex",
+                          alignItems: "center",
                         }}
                         aria-selected={isActive}
                       >
-                        {isActive ? "▶ " : "+ "}
+                        <span
+                          aria-hidden
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            width: 16,
+                            marginRight: 4,
+                            lineHeight: 1,
+                            opacity: isActive ? 1 : 0,
+                          }}
+                        >
+                          ▶
+                        </span>
                         {t} <span style={{ opacity: 0.7 }}>({count})</span>
                       </button>
                     );

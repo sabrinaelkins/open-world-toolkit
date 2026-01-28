@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, useLayoutEffect, useCallback } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import type {
   Location as WorldLocation,
@@ -60,6 +60,9 @@ type Props = {
   onDeleteTag: (tag: string) => void;
 };
 
+type TagRow = { key: string; label: string; count: number };
+type TagGroup = { category: TagCategory | ""; items: TagRow[] };
+
 export function TagsEditor({
   locations,
   tagMeta,
@@ -68,49 +71,59 @@ export function TagsEditor({
   onMergeTag,
   onDeleteTag,
 }: Props) {
+  const norm = useCallback((s: string) => s.trim().toLowerCase(), []);
+
   const [search, setSearch] = useState("");
-  const [selectedTag, setSelectedTag] = useState<string>(""); // canonical key (lowercase)
+  const [selectedTag, setSelectedTag] = useState<string>(""); // canonical key
   const [renameTo, setRenameTo] = useState("");
   const [mergeTo, setMergeTo] = useState("");
 
-  // keyboard nav (tag list)
-  const [activeIdx, setActiveIdx] = useState<number>(-1);
-  const tagRowRefs = useRef(new Map<string, HTMLButtonElement | null>());
+  // keyboard nav (visual order)
+  const [activeKey, setActiveKey] = useState<string | null>(null);
 
-  // Build tag list + counts (case-insensitive grouping, but display first-seen casing)
+  // stable refs map (cleanup on unmount)
+  const tagRowRefs = useRef<Map<string, HTMLButtonElement | null>>(new Map());
+
+  // ------------------------------
+  // Build tag list + counts
+  // ------------------------------
   const tagStats = useMemo(() => {
     const map = new Map<string, { label: string; count: number }>();
 
     for (const loc of locations) {
       for (const t of loc.tags ?? []) {
-        const key = t.trim().toLowerCase();
+        const raw = t.trim();
+        const key = norm(raw);
         if (!key) continue;
 
         const prev = map.get(key);
         if (prev) prev.count += 1;
-        else map.set(key, { label: t.trim(), count: 1 });
+        else map.set(key, { label: raw, count: 1 });
       }
     }
 
-    // sorted by count desc then alpha
     return Array.from(map.entries())
       .map(([key, v]) => ({ key, label: v.label, count: v.count }))
       .sort((a, b) => {
         if (b.count !== a.count) return b.count - a.count;
         return a.label.localeCompare(b.label);
       });
-  }, [locations]);
+  }, [locations, norm]);
+
+  // label lookup (for keyboard hint / “Active:” display)
+  const labelByKey = useMemo(() => {
+    const m = new Map<string, string>();
+    tagStats.forEach((t) => m.set(t.key, t.label));
+    return m;
+  }, [tagStats]);
 
   const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    const q = norm(search);
     if (!q) return tagStats;
     return tagStats.filter(
       (t) => t.label.toLowerCase().includes(q) || t.key.includes(q)
     );
-  }, [search, tagStats]);
-
-  type TagRow = { key: string; label: string; count: number };
-  type TagGroup = { category: TagCategory | ""; items: TagRow[] };
+  }, [search, tagStats, norm]);
 
   const grouped = useMemo((): TagGroup[] => {
     const buckets = new Map<TagCategory | "", TagRow[]>();
@@ -125,7 +138,7 @@ export function TagsEditor({
     const out: TagGroup[] = [];
     for (const cat of CATEGORY_ORDER) {
       const items = buckets.get(cat);
-      if (!items || items.length === 0) continue;
+      if (!items?.length) continue;
 
       items.sort((a, b) => {
         if (b.count !== a.count) return b.count - a.count;
@@ -138,88 +151,155 @@ export function TagsEditor({
     return out;
   }, [filtered, tagMeta]);
 
-  // current selected tag object (based on key)
+  // ------------------------------
+  // Keyboard nav list (exact render order)
+  // ------------------------------
+  const keysInVisualOrder = useMemo(
+    () => grouped.flatMap((g) => g.items.map((t) => t.key)),
+    [grouped]
+  );
+
+  const idxByKey = useMemo(() => {
+    const m = new Map<string, number>();
+    keysInVisualOrder.forEach((k, i) => m.set(k, i));
+    return m;
+  }, [keysInVisualOrder]);
+
+  // derived safe key (never invalid)
+  const safeActiveKey = useMemo(() => {
+    if (!activeKey) return null;
+    return idxByKey.has(activeKey) ? activeKey : null;
+  }, [activeKey, idxByKey]);
+
+  // keep active row visible
+  useLayoutEffect(() => {
+    if (!safeActiveKey) return;
+    const el = tagRowRefs.current.get(safeActiveKey);
+    if (!el) return;
+    el.scrollIntoView({ block: "nearest" });
+  }, [safeActiveKey]);
+
+  // ------------------------------
+  // Selected tag + meta
+  // ------------------------------
   const selected = useMemo(() => {
     if (!selectedTag) return null;
-    const k = selectedTag.trim().toLowerCase();
+    const k = norm(selectedTag);
     return tagStats.find((t) => t.key === k) ?? null;
-  }, [selectedTag, tagStats]);
+  }, [selectedTag, tagStats, norm]);
 
   const meta: TagMeta = selected ? tagMeta[selected.key] ?? {} : {};
 
-  function selectTag(tagKey: string) {
-    setSelectedTag(tagKey.trim().toLowerCase());
-    setRenameTo("");
-    setMergeTo("");
-  }
+  const selectTag = useCallback(
+    (tagKey: string) => {
+      const k = norm(tagKey);
+      setSelectedTag(k);
+      setActiveKey(k); // keep active synced with selection
+      setRenameTo("");
+      setMergeTo("");
+    },
+    [norm]
+  );
+
+  const moveActive = useCallback(
+    (dir: -1 | 1) => {
+      if (keysInVisualOrder.length === 0) return;
+
+      setActiveKey((prev) => {
+        if (!prev) {
+          return dir === 1
+            ? keysInVisualOrder[0]
+            : keysInVisualOrder[keysInVisualOrder.length - 1];
+        }
+
+        const curIdx = idxByKey.get(prev);
+        if (curIdx == null) {
+          return dir === 1
+            ? keysInVisualOrder[0]
+            : keysInVisualOrder[keysInVisualOrder.length - 1];
+        }
+
+        const nextIdx = Math.max(
+          0,
+          Math.min(curIdx + dir, keysInVisualOrder.length - 1)
+        );
+
+        return keysInVisualOrder[nextIdx] ?? prev;
+      });
+    },
+    [idxByKey, keysInVisualOrder]
+  );
 
   function onTagListKeyDown(e: ReactKeyboardEvent<HTMLDivElement>) {
-    if (filtered.length === 0) return;
+    if (keysInVisualOrder.length === 0) return;
 
     if (e.key === "ArrowDown") {
       e.preventDefault();
-      setActiveIdx((prev) => {
-        const next = prev < 0 ? 0 : (prev + 1) % filtered.length;
-        return next;
-      });
+      e.stopPropagation();
+      moveActive(1);
       return;
     }
 
     if (e.key === "ArrowUp") {
       e.preventDefault();
-      setActiveIdx((prev) => {
-        const next =
-          prev < 0
-            ? filtered.length - 1
-            : (prev - 1 + filtered.length) % filtered.length;
-        return next;
-      });
+      e.stopPropagation();
+      moveActive(-1);
       return;
     }
 
     if (e.key === "Enter") {
       e.preventDefault();
-      const idx = activeIdx < 0 ? 0 : activeIdx;
-      const t = filtered[idx];
-      if (!t) return;
-      selectTag(t.key);
+      e.stopPropagation();
+      const key = safeActiveKey ?? keysInVisualOrder[0] ?? null;
+      if (key) selectTag(key);
       return;
     }
 
     if (e.key === "Escape") {
       e.preventDefault();
-      setActiveIdx(-1);
+      e.stopPropagation();
+      setActiveKey(null);
+      return;
     }
   }
 
   function handleRename() {
     if (!selected) return;
+
     const from = selected.label.trim();
     const to = renameTo.trim();
     if (!to) return;
     if (from.toLowerCase() === to.toLowerCase()) return;
 
     onRenameTag(from, to);
-    setSelectedTag(to.toLowerCase());
+
+    const k = norm(to);
+    setSelectedTag(k);
+    setActiveKey(k);
     setRenameTo("");
     setMergeTo("");
   }
 
   function handleMerge() {
     if (!selected) return;
+
     const from = selected.label.trim();
     const to = mergeTo.trim();
     if (!to) return;
     if (from.toLowerCase() === to.toLowerCase()) return;
 
     onMergeTag(from, to);
-    setSelectedTag(to.toLowerCase());
+
+    const k = norm(to);
+    setSelectedTag(k);
+    setActiveKey(k);
     setMergeTo("");
     setRenameTo("");
   }
 
   function handleDelete() {
     if (!selected) return;
+
     const kill = selected.label.trim();
     if (!kill) return;
 
@@ -233,38 +313,34 @@ export function TagsEditor({
     setSelectedTag("");
     setRenameTo("");
     setMergeTo("");
-    setActiveIdx(-1);
+    setActiveKey(null);
   }
 
   return (
     <section className="owt-panel owt-panel-lifted" style={{ marginTop: 24 }}>
-      {/* Heading first, like the other tabs */}
       <h2 style={{ marginTop: 0 }}>Tags</h2>
 
-      {/* Search */}
       <input
         value={search}
         onChange={(e) => {
           setSearch(e.target.value);
-          setActiveIdx(-1);
+          setActiveKey(null);
         }}
         placeholder="Search tags…"
         style={{ width: "100%", marginBottom: 14 }}
       />
 
-      <div
-        style={{
-          display: "flex",
-          gap: 16,
-          alignItems: "flex-start",
-        }}
-      >
+      <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
         {/* LEFT: tag list */}
         <div
           className="owt-subpanel"
           tabIndex={0}
           onKeyDown={onTagListKeyDown}
           onMouseDown={(e) => (e.currentTarget as HTMLDivElement).focus()}
+          onFocus={() => {
+            if (!activeKey && selected?.key) setActiveKey(selected.key);
+          }}
+          onBlur={() => setActiveKey(null)}
           style={{
             flex: 1,
             minWidth: 260,
@@ -276,6 +352,29 @@ export function TagsEditor({
             {tagStats.length} unique tag{tagStats.length === 1 ? "" : "s"}
           </div>
 
+          {/* keyboard hint */}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 10,
+              marginBottom: 10,
+              fontSize: 11,
+              opacity: 0.75,
+            }}
+          >
+            <span>Use ↑ ↓ to move, Enter to select, Esc to clear</span>
+            {safeActiveKey && (
+              <span style={{ opacity: 0.75 }}>
+                Active:{" "}
+                <strong>
+                  {labelByKey.get(safeActiveKey) ?? safeActiveKey}
+                </strong>
+              </span>
+            )}
+          </div>
+
           {filtered.length === 0 ? (
             <div style={{ opacity: 0.7, fontSize: 14 }}>
               No tags match your search
@@ -284,7 +383,6 @@ export function TagsEditor({
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {grouped.map((g) => (
                 <div key={g.category || "uncat"} style={{ marginBottom: 6 }}>
-                  {/* Group header */}
                   <div
                     style={{
                       fontSize: 11,
@@ -301,28 +399,42 @@ export function TagsEditor({
                     <span style={{ opacity: 0.7 }}>{g.items.length}</span>
                   </div>
 
-                  {/* Group items */}
                   <div
-                    style={{
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: 6,
-                    }}
+                    style={{ display: "flex", flexDirection: "column", gap: 6 }}
                   >
                     {g.items.map((t) => {
-                      const idx = filtered.findIndex((x) => x.key === t.key);
                       const isSelected = selected?.key === t.key;
-                      const isActive = idx === activeIdx;
+                      const isActive = t.key === safeActiveKey;
 
                       return (
                         <button
                           key={t.key}
                           ref={(el) => {
-                            tagRowRefs.current.set(t.key, el);
+                            if (el) tagRowRefs.current.set(t.key, el);
+                            else tagRowRefs.current.delete(t.key);
                           }}
-                          onClick={() => {
-                            setActiveIdx(idx);
-                            selectTag(t.key);
+                          onClick={() => selectTag(t.key)}
+                          onMouseEnter={(e) => {
+                            if (isSelected || isActive) return;
+                            e.currentTarget.style.background =
+                              "rgba(55,65,81,0.45)";
+                          }}
+                          onMouseLeave={(e) => {
+                            if (isSelected) return;
+                            e.currentTarget.style.background = isActive
+                              ? "rgba(55,65,81,0.9)"
+                              : "transparent";
+                            e.currentTarget.style.transform = isActive
+                              ? "translateX(2px)"
+                              : "none";
+                          }}
+                          onMouseDown={(e) => {
+                            e.currentTarget.style.transform = "scale(0.98)";
+                          }}
+                          onMouseUp={(e) => {
+                            e.currentTarget.style.transform = isActive
+                              ? "translateX(2px)"
+                              : "none";
                           }}
                           style={{
                             textAlign: "left",
@@ -346,6 +458,7 @@ export function TagsEditor({
                             fontSize: 13,
                             transition:
                               "background 120ms ease, border 120ms ease, transform 100ms ease",
+                            transform: isActive ? "translateX(2px)" : "none",
                           }}
                           aria-selected={isSelected}
                         >
@@ -382,13 +495,7 @@ export function TagsEditor({
         </div>
 
         {/* RIGHT: details */}
-        <div
-          className="owt-subpanel"
-          style={{
-            flex: 1,
-            padding: 12,
-          }}
-        >
+        <div className="owt-subpanel" style={{ flex: 1, padding: 12 }}>
           <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 8 }}>
             Selected
           </div>
@@ -400,8 +507,7 @@ export function TagsEditor({
               </div>
 
               <div style={{ marginTop: 6, opacity: 0.8, fontSize: 13 }}>
-                Used {selected.count} time
-                {selected.count === 1 ? "" : "s"}
+                Used {selected.count} time{selected.count === 1 ? "" : "s"}
               </div>
 
               {/* Description */}
@@ -565,24 +671,6 @@ export function TagsEditor({
                     color: "#fca5a5",
                     cursor: "pointer",
                     fontWeight: 600,
-                    transition: "all 140ms ease",
-                    boxShadow: "0 0 0px transparent",
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.boxShadow =
-                      "0 0 12px rgba(248,113,113,0.6)";
-                    e.currentTarget.style.transform = "translateY(-1px)";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.boxShadow = "0 0 0px transparent";
-                    e.currentTarget.style.transform = "none";
-                  }}
-                  onMouseDown={(e) => {
-                    e.currentTarget.style.transform = "scale(0.95)";
-                  }}
-                  onMouseUp={(e) => {
-                    e.currentTarget.style.transform =
-                      "translateY(-1px) scale(1)";
                   }}
                 >
                   Delete everywhere

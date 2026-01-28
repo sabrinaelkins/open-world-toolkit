@@ -1,4 +1,40 @@
+// --- Terrain / Biomes (procedural) -----------------------------
+
+export type TerrainAlgo = "fbm";
+
+export type TerrainGeneratorSettings = {
+  algo: TerrainAlgo;
+  seed: number;
+
+  // resolution of the generated grid (separate from display size)
+  grid: { width: number; height: number };
+
+  // noise shaping
+  scale: number; // bigger = smoother
+  octaves: number;
+  lacunarity: number;
+  gain: number;
+
+  // optional domain warp amount (0 = off)
+  warp?: number;
+};
+
+export type TerrainData = {
+  // length = grid.width * grid.height
+  height: number[]; // 0..1
+  moisture: number[]; // 0..1
+};
+export type BiomeId = "forest" | "desert" | "water" | "mountain" | "plains";
+
+export type BiomeGrid = {
+  biomes: BiomeId[];
+  override?: (BiomeId | null)[];
+};
+
+// --------------------------------------------------------------
 // Interface
+// --------------------------------------------------------------
+
 export interface WorldSettings {
   defaultSpawnMapId: string;
 }
@@ -16,6 +52,11 @@ export interface MapData {
   description: string;
   size?: { width: number; height: number; unit?: string };
   locations: string[];
+
+  // NEW (optional = backward compatible)
+  terrainGen?: TerrainGeneratorSettings;
+  terrain?: TerrainData;
+  biomes?: BiomeGrid;
 }
 
 export interface Location {
@@ -26,6 +67,7 @@ export interface Location {
   radius: number;
   tags: string[];
 }
+
 // Types
 export type TagCategory =
   | "system"
