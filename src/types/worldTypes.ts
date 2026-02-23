@@ -1,3 +1,5 @@
+export const GAME_WORLD_FILE_VERSION = 1;
+
 // --- Terrain / Biomes (procedural) -----------------------------
 
 export type TerrainAlgo = "fbm";
@@ -53,7 +55,7 @@ export interface MapData {
   size?: { width: number; height: number; unit?: string };
   locations: string[];
 
-  // NEW (optional = backward compatible)
+  // (backward compatible)
   terrainGen?: TerrainGeneratorSettings;
   terrain?: TerrainData;
   biomes?: BiomeGrid;
@@ -175,7 +177,7 @@ export const tagMetaDefaults: Record<string, TagMeta> = {
   },
 };
 export type GameWorldFile = {
-  version: number;
+  version: typeof GAME_WORLD_FILE_VERSION;
   world: {
     id: string;
     name: string;

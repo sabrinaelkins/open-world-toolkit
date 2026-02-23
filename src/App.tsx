@@ -13,7 +13,7 @@ import { WorldEditor } from "./components/WorldEditor";
 import { MapsEditor } from "./components/MapsEditor";
 import { LocationsEditor } from "./components/LocationsEditor";
 import { PreviewTab } from "./components/PreviewTab";
-
+import { loadGameWorldFile } from "./types/worldIO";
 // ------------------------------
 // helpers: import/export
 // ------------------------------
@@ -34,38 +34,14 @@ function downloadJson(filename: string, data: unknown) {
 // types
 type TabKey = "world" | "maps" | "locations" | "tags" | "preview";
 type Issue = { level: "error" | "warning"; message: string };
-// component
-function isGameWorldFile(x: unknown): x is GameWorldFile {
-  if (!x || typeof x !== "object") return false;
-  const obj = x as Record<string, unknown>;
-
-  if (!Array.isArray(obj.maps)) return false;
-  if (!Array.isArray(obj.locations)) return false;
-  if (typeof obj.world !== "object" || obj.world === null) return false;
-
-  // tagMeta is optional; if present, it must be an object
-  if (
-    "tagMeta" in obj &&
-    obj.tagMeta !== undefined &&
-    (typeof obj.tagMeta !== "object" || obj.tagMeta === null)
-  ) {
-    return false;
-  }
-
-  return true;
-}
 
 // ------------------------------
 // APP
 // ------------------------------
 export default function App() {
-  // Start from a deep copy so we don't mutate imported JSON
+  // Start from a fully migrated + normalized world file
   const initialWorld = useMemo(() => {
-    try {
-      return structuredClone(worldData as GameWorldFile);
-    } catch {
-      return JSON.parse(JSON.stringify(worldData)) as GameWorldFile;
-    }
+    return loadGameWorldFile(worldData as unknown);
   }, []);
 
   // Persisted world
@@ -84,28 +60,17 @@ export default function App() {
   >({});
   const [tagFilters, setTagFilters] = useState<string[]>([]);
 
-  function ensureTagMeta(
-    prev: GameWorldFile
-  ): GameWorldFile & { tagMeta: Record<string, TagMeta> } {
-    return {
-      ...prev,
-      tagMeta: prev.tagMeta ?? {},
-    };
-  }
-
   function updateTagMeta(tag: string, patch: Partial<TagMeta>) {
     const key = tag.trim().toLowerCase();
     if (!key) return;
 
     setWorld((prev) => {
-      const base = ensureTagMeta(prev);
-
-      const existing: TagMeta = base.tagMeta[key] ?? {};
+      const existing = prev.tagMeta?.[key] ?? {};
 
       return {
-        ...base,
+        ...prev,
         tagMeta: {
-          ...base.tagMeta,
+          ...(prev.tagMeta ?? {}),
           [key]: { ...existing, ...patch },
         },
       };
@@ -430,13 +395,13 @@ export default function App() {
     try {
       const text = await file.text();
       const parsed = JSON.parse(text) as unknown;
+      const loaded = loadGameWorldFile(parsed);
+      setWorld(loaded);
 
-      if (!isGameWorldFile(parsed)) {
-        throw new Error("Invalid world structure");
-      }
-
-      setWorld(parsed);
       setTagFilters([]);
+      setTagDraftByLocId({});
+      setActiveTab("world");
+
       alert("Imported successfully");
     } catch (err) {
       console.error("Import failed:", err);
@@ -497,9 +462,10 @@ export default function App() {
       0 0 40px rgba(120,180,255,0.55),
       0 0 80px rgba(30,100,255,0.35)
     `,
+            textAlign: "center",
           }}
         >
-          <h1 style={{ textAlign: "center" }}>Open World Toolkit (Editor)</h1>
+          Open World Toolkit (Editor)
         </h1>
         {/* WORLD */}
         {activeTab === "world" && (
