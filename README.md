@@ -1,73 +1,75 @@
-# React + TypeScript + Vite
+# Open World Toolkit
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A lightweight **React + TypeScript world-building editor** for designing and managing open-world game data.
 
-Currently, two official plugins are available:
+This tool allows developers to create and organize **maps, locations, and metadata tags**, export world data as portable JSON files, and automatically persist editing sessions in the browser.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+---
 
-## React Compiler
+## Features
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- **World Editing**
+  - Create and manage maps and locations
+  - Edit world metadata and settings
 
-## Expanding the ESLint configuration
+- **Tag System**
+  - Add tags to locations
+  - Tag metadata (categories, descriptions, colors)
+  - Rename, merge, and delete tags across the entire world
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+- **JSON Import / Export**
+  - Export worlds as portable `.json` files
+  - Import previously saved world files
+  - Schema migration support for older world versions
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+- **Validation System**
+  - Detect invalid map references
+  - Warn about missing tags or unassigned locations
+  - Preview diagnostics for errors and warnings
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+- **Local Persistence**
+  - Autosaves world data to **browser LocalStorage**
+  - Restore editing session after refresh
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+---
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## Tech Stack
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+- **Language:** TypeScript (compiled to JavaScript)
+- **Framework:** React
+- **Build Tool:** Vite
+- **Data Format:** JSON
+- **Storage:** Browser LocalStorage
+- **Version Control:** Git
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+---
+
+## Project Architecture
+
+Key design patterns used in the project:
+
+- **Type-safe data modeling** using TypeScript interfaces
+- **Schema migration system** for upgrading world file versions
+- **Data normalization and validation** for imported world files
+- **Single source of truth** for world data (`world.locations`)
+- **Derived state synchronization** using React hooks (`useMemo`)
+- **Modular component architecture** for editor UI
+
+---
+
+## Getting Started
+
+### 1. Clone the repository
+
+```bash
+git clone https://github.com/sabrinaelkins/open-world-toolkit.git
+cd open-world-toolkit
+---
+## License
+
+This project is licensed under the MIT License.
+
+Copyright (c) 2026 Sabrina Elkins
+
+See the [LICENSE](LICENSE) file for details.
 ```
