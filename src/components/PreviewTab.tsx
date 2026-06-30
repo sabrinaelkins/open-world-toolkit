@@ -417,6 +417,79 @@ export function PreviewTab({
         )}
       </div>
 
+      {/* ── NPCs ── */}
+      {(world.npcs ?? []).length > 0 && (
+        <div>
+          <h3 className="text-sm font-bold text-slate-300 uppercase tracking-wide mb-3">
+            🧑 NPCs
+          </h3>
+          <div className="owt-subpanel flex flex-col gap-2">
+            {(world.npcs ?? []).map((npc) => {
+              const loc = locations.find((l) => l.id === npc.locationId);
+              return (
+                <div key={npc.id} className="flex items-center gap-3 text-xs">
+                  <span className="text-slate-400 w-24 truncate font-medium text-slate-200">
+                    {npc.name}
+                  </span>
+                  <span className="text-slate-500 bg-slate-800 px-1.5 py-0.5 rounded">
+                    {npc.role.replace("_", " ")}
+                  </span>
+                  {loc && <span className="text-slate-500">@ {loc.name}</span>}
+                  {npc.dialogue && (
+                    <span className="text-slate-600 italic truncate max-w-xs">
+                      "{npc.dialogue}"
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ── Quests ── */}
+      {(world.quests ?? []).length > 0 && (
+        <div>
+          <h3 className="text-sm font-bold text-slate-300 uppercase tracking-wide mb-3">
+            📜 Quests
+          </h3>
+          <div className="owt-subpanel flex flex-col gap-2">
+            {(world.quests ?? []).map((quest) => {
+              const completed = quest.objectives.filter(
+                (o) => o.completed,
+              ).length;
+              const total = quest.objectives.length;
+              return (
+                <div key={quest.id} className="flex items-center gap-3 text-xs">
+                  <span className="text-slate-200 font-medium w-40 truncate">
+                    {quest.title}
+                  </span>
+                  <span
+                    className={`px-1.5 py-0.5 rounded border text-xs ${
+                      quest.status === "active"
+                        ? "text-blue-300 border-blue-500/40 bg-blue-500/10"
+                        : quest.status === "completed"
+                          ? "text-green-300 border-green-500/40 bg-green-500/10"
+                          : quest.status === "failed"
+                            ? "text-red-300 border-red-500/40 bg-red-500/10"
+                            : "text-slate-400 border-slate-600 bg-slate-700/60"
+                    }`}
+                  >
+                    {quest.status}
+                  </span>
+                  <span className="text-slate-500">{quest.type}</span>
+                  {total > 0 && (
+                    <span className="text-slate-500">
+                      {completed}/{total} objectives
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* ── Unassigned locations ── */}
       {locations.filter((l) => l.mapId === "unassigned").length > 0 && (
         <div>

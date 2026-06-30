@@ -3,7 +3,7 @@
   "world": {
     "id": "world_001",
     "name": "Open World Toolkit Demo",
-    "description": "First test world file.",
+    "description": "A demo world showing the Open World Toolkit features.",
     "settings": {
       "defaultSpawnMapId": "map_001"
     }
@@ -12,8 +12,18 @@
     {
       "id": "map_001",
       "name": "Starter Region",
-      "description": "A simple region to test loading.",
+      "description": "A simple region to get started.",
       "size": { "width": 2000, "height": 2000, "unit": "meters" },
+      "terrainGen": {
+        "algo": "fbm",
+        "seed": 42,
+        "scale": 18,
+        "octaves": 4,
+        "lacunarity": 2,
+        "gain": 0.5,
+        "warp": 0.3,
+        "grid": { "width": 32, "height": 32 }
+      },
       "locations": ["loc_spawn"]
     }
   ],
@@ -22,8 +32,8 @@
       "id": "loc_spawn",
       "mapId": "map_001",
       "name": "Spawn Point",
-      "position": { "x": 0, "y": 0, "z": 0 },
-      "radius": 5,
+      "position": { "x": 1000, "y": 1000, "z": 0 },
+      "radius": 50,
       "tags": ["spawn"]
     }
   ],
