@@ -139,7 +139,7 @@ export function loadGameWorldFile(input: unknown): GameWorldFile {
 
   const maps: MapData[] = (migrated.maps ?? []).map(normalizeMap);
   const locations: Location[] = (migrated.locations ?? []).map(
-    normalizeLocation
+    normalizeLocation,
   );
 
   return {
@@ -153,9 +153,9 @@ export function loadGameWorldFile(input: unknown): GameWorldFile {
     maps,
     locations,
     tagMeta: mergeTagMeta(migrated.tagMeta),
-    npcs: migrated.npcs,
+    npcs: Array.isArray(migrated.npcs) ? migrated.npcs : [],
+    quests: Array.isArray(migrated.quests) ? migrated.quests : [],
     items: migrated.items,
-    quests: migrated.quests,
     triggers: migrated.triggers,
   };
 }
@@ -180,8 +180,8 @@ export function migrateGameWorldFile(input: unknown): GameWorldFile {
     typeof input.version === "number"
       ? input.version
       : typeof input.version === "string"
-      ? Number(input.version)
-      : 0;
+        ? Number(input.version)
+        : 0;
 
   // already current (or newer) -> return as-is (loadGameWorldFile will normalize)
   if (rawVersion >= GAME_WORLD_FILE_VERSION) {

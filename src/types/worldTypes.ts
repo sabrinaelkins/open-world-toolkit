@@ -176,6 +176,56 @@ export const tagMetaDefaults: Record<string, TagMeta> = {
     color: "#74b9ff",
   },
 };
+// --------------------------------------------------------------
+// NPC
+// --------------------------------------------------------------
+export type NpcRole =
+  | "merchant"
+  | "quest_giver"
+  | "guard"
+  | "enemy"
+  | "companion"
+  | "villager"
+  | "boss"
+  | "neutral"
+  | "custom";
+
+export interface Npc {
+  id: string;
+  name: string;
+  role: NpcRole;
+  locationId: string; // which location they live at
+  mapId: string;
+  dialogue?: string; // intro dialogue line
+  tags: string[];
+  notes?: string;
+}
+
+// --------------------------------------------------------------
+// Quest
+// --------------------------------------------------------------
+export type QuestStatus = "draft" | "active" | "completed" | "failed";
+export type QuestType = "main" | "side" | "daily" | "hidden";
+
+export interface QuestObjective {
+  id: string;
+  description: string;
+  locationId?: string; // optional location tie-in
+  completed: boolean;
+}
+
+export interface Quest {
+  id: string;
+  title: string;
+  type: QuestType;
+  status: QuestStatus;
+  description: string;
+  giverNpcId?: string; // which NPC gives this quest
+  objectives: QuestObjective[];
+  tags: string[];
+  notes?: string;
+}
+
 export type GameWorldFile = {
   version: typeof GAME_WORLD_FILE_VERSION;
   world: {
@@ -189,8 +239,8 @@ export type GameWorldFile = {
   maps: MapData[];
   locations: Location[];
   tagMeta?: Record<string, TagMeta>;
-  npcs?: unknown[];
+  npcs: Npc[];
+  quests: Quest[];
   items?: unknown[];
-  quests?: unknown[];
   triggers?: unknown[];
 };

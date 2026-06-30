@@ -1,418 +1,93 @@
-import { useMemo, useRef, useState } from "react";
-import { usePersistedWorld } from "./hooks/usePersistedWorld";
-import worldData from "./data/world_example.json";
-import type {
-  GameWorldFile,
-  MapData,
-  Location as WorldLocation,
-  TagMeta,
-} from "./types/worldTypes";
+import { useEffect, useRef, useState } from "react";
+import { WorldProvider } from "./context/WorldContext";
+import { useWorld } from "./context/useWorld";
 import { TagsEditor } from "./components/TagsEditor";
 import { Sidebar } from "./components/Sidebar";
 import { WorldEditor } from "./components/WorldEditor";
 import { MapsEditor } from "./components/MapsEditor";
 import { LocationsEditor } from "./components/LocationsEditor";
 import { PreviewTab } from "./components/PreviewTab";
+import { Modal } from "./components/Modal";
+import { ExportModal } from "./components/ExportModal";
+import { NpcsEditor } from "./components/NpcsEditor";
+import { QuestsEditor } from "./components/QuestsEditor";
+import { useModal } from "./hooks/useModal";
 import { loadGameWorldFile } from "./types/worldIO";
-// ------------------------------
-// helpers: import/export
-// ------------------------------
-function downloadJson(filename: string, data: unknown) {
-  const blob = new Blob([JSON.stringify(data, null, 2)], {
-    type: "application/json",
+
+type TabKey =
+  | "world"
+  | "maps"
+  | "locations"
+  | "tags"
+  | "npcs"
+  | "quests"
+  | "preview";
+const ACTIVE_TAB_STORAGE_KEY = "open_world_toolkit_active_tab";
+
+function AppInner() {
+  const {
+    syncedWorld,
+    locationById,
+    errorIssues,
+    warningIssues,
+    hasErrors,
+    dispatch,
+    tagSuggestions,
+    resetSavedWorld,
+  } = useWorld();
+
+  const { config, closeModal, confirm, success, error } = useModal();
+  const [showExportModal, setShowExportModal] = useState(false);
+
+  // Tab state
+  const [activeTab, setActiveTab] = useState<TabKey>(() => {
+    const saved = localStorage.getItem(ACTIVE_TAB_STORAGE_KEY);
+    if (
+      saved === "world" ||
+      saved === "maps" ||
+      saved === "locations" ||
+      saved === "tags" ||
+      saved === "npcs" ||
+      saved === "quests" ||
+      saved === "preview"
+    )
+      return saved;
+    return "world";
   });
-  const url = URL.createObjectURL(blob);
+  useEffect(() => {
+    localStorage.setItem(ACTIVE_TAB_STORAGE_KEY, activeTab);
+  }, [activeTab]);
 
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-
-  URL.revokeObjectURL(url);
-}
-
-// types
-type TabKey = "world" | "maps" | "locations" | "tags" | "preview";
-type Issue = { level: "error" | "warning"; message: string };
-
-// ------------------------------
-// APP
-// ------------------------------
-export default function App() {
-  // Start from a fully migrated + normalized world file
-  const initialWorld = useMemo(() => {
-    return loadGameWorldFile(worldData as unknown);
-  }, []);
-
-  // Persisted world
-  const { world, setWorld, resetSavedWorld } = usePersistedWorld(
-    "open_world_toolkit_world",
-    initialWorld
-  );
-
-  // UI state
-  const [activeTab, setActiveTab] = useState<TabKey>("world");
-  const importInputRef = useRef<HTMLInputElement | null>(null);
-
-  // Tag drafts (each location remembers what you're typing)
   const [tagDraftByLocId, setTagDraftByLocId] = useState<
     Record<string, string>
   >({});
   const [tagFilters, setTagFilters] = useState<string[]>([]);
 
-  function updateTagMeta(tag: string, patch: Partial<TagMeta>) {
-    const key = tag.trim().toLowerCase();
-    if (!key) return;
-
-    setWorld((prev) => {
-      const existing = prev.tagMeta?.[key] ?? {};
-
-      return {
-        ...prev,
-        tagMeta: {
-          ...(prev.tagMeta ?? {}),
-          [key]: { ...existing, ...patch },
-        },
-      };
-    });
-  }
-  // ------------------------------
-  // Keep map.locations derived from world.locations (single source of truth)
-  // ------------------------------
-  const syncedWorld: GameWorldFile = useMemo(() => {
-    const mapIdToLocIds = new Map<string, string[]>();
-
-    for (const loc of world.locations) {
-      const arr = mapIdToLocIds.get(loc.mapId) ?? [];
-      arr.push(loc.id);
-      mapIdToLocIds.set(loc.mapId, arr);
-    }
-
-    const maps = world.maps.map((m) => ({
-      ...m,
-      locations: mapIdToLocIds.get(m.id) ?? [],
-    }));
-
-    return { ...world, maps };
-  }, [world]);
-
-  // Smart tag suggestions
-  const tagSuggestions = useMemo(() => {
-    const presets = [
-      "spawn",
-      "poi",
-      "city",
-      "town",
-      "dungeon",
-      "shop",
-      "quest",
-      "boss",
-      "safe",
-      "danger",
-      "forest",
-      "desert",
-      "mountain",
-      "water",
-      "camp",
-      "npc",
-    ];
-
-    const used = new Set<string>();
-    for (const loc of syncedWorld.locations) {
-      for (const t of loc.tags ?? []) used.add(t);
-    }
-
-    return Array.from(new Set([...presets, ...Array.from(used)]))
-      .map((t) => t.trim())
-      .filter(Boolean)
-      .sort((a, b) => a.localeCompare(b));
-  }, [syncedWorld.locations]);
-
-  // Lookup helper: location id -> Location
-  const locationById = useMemo(() => {
-    return new Map(syncedWorld.locations.map((l) => [l.id, l] as const));
-  }, [syncedWorld.locations]);
-
-  // ------------------------------
-  // Validation (Preview Issues)
-  // ------------------------------
-  const previewIssues = useMemo(() => {
-    const issues: Issue[] = [];
-
-    const mapIds = new Set(syncedWorld.maps.map((m) => m.id));
-    const locationIds = new Set(syncedWorld.locations.map((l) => l.id));
-
-    for (const l of syncedWorld.locations) {
-      if (l.mapId !== "unassigned" && !mapIds.has(l.mapId)) {
-        issues.push({
-          level: "error",
-          message: `Location "${l.id}" points to missing mapId "${l.mapId}"`,
-        });
-      }
-    }
-
-    for (const m of syncedWorld.maps) {
-      for (const locId of m.locations ?? []) {
-        if (!locationIds.has(locId)) {
-          issues.push({
-            level: "error",
-            message: `Map "${m.id}" references missing locationId "${locId}"`,
-          });
-        }
-      }
-    }
-
-    for (const l of syncedWorld.locations) {
-      if (!l.tags || l.tags.length === 0) {
-        issues.push({
-          level: "warning",
-          message: `Location "${l.id}" has no tags`,
-        });
-      }
-      if (l.mapId === "unassigned") {
-        issues.push({
-          level: "warning",
-          message: `Location "${l.id}" is unassigned to a map`,
-        });
-      }
-    }
-
-    return issues;
-  }, [syncedWorld]);
-
-  const errorIssues = useMemo(
-    () => previewIssues.filter((i) => i.level === "error"),
-    [previewIssues]
-  );
-  const warningIssues = useMemo(
-    () => previewIssues.filter((i) => i.level === "warning"),
-    [previewIssues]
-  );
-  const hasErrors = errorIssues.length > 0;
-
-  // ------------------------------
-  // World editor
-  // ------------------------------
-  function updateWorldInfo(patch: Partial<GameWorldFile["world"]>) {
-    setWorld((prev) => ({
-      ...prev,
-      world: { ...prev.world, ...patch },
-    }));
-  }
-
-  // ------------------------------
-  // Maps editor
-  // ------------------------------
-  function addMap() {
-    setWorld((prev) => {
-      const nextNumber = prev.maps.length + 1;
-      const newMapId = `map_${String(nextNumber).padStart(3, "0")}`;
-
-      const newMap: MapData = {
-        id: newMapId,
-        name: "New Map",
-        description: "Describe this region...",
-        size: { width: 2000, height: 2000, unit: "meters" },
-        locations: [],
-      };
-
-      return { ...prev, maps: [...prev.maps, newMap] };
-    });
-  }
-
-  function updateMap(mapId: string, patch: Partial<MapData>) {
-    setWorld((prev) => ({
-      ...prev,
-      maps: prev.maps.map((m) => (m.id === mapId ? { ...m, ...patch } : m)),
-    }));
-  }
-
-  function deleteMap(mapId: string) {
-    setWorld((prev) => {
-      const maps = prev.maps.filter((m) => m.id !== mapId);
-      const locations = prev.locations.map((l) =>
-        l.mapId === mapId ? { ...l, mapId: "unassigned" } : l
-      );
-      return { ...prev, maps, locations };
-    });
-  }
-
-  // ------------------------------
-  // Locations editor
-  // ------------------------------
-  function addLocation() {
-    setWorld((prev) => {
-      const nextNumber = prev.locations.length + 1;
-      const newLocId = `loc_${String(nextNumber).padStart(3, "0")}`;
-
-      const newLoc: WorldLocation = {
-        id: newLocId,
-        name: "New Location",
-        mapId: prev.maps[0]?.id ?? "unassigned",
-        position: { x: 0, y: 0, z: 0 },
-        radius: 5,
-        tags: [],
-      };
-
-      return { ...prev, locations: [...prev.locations, newLoc] };
-    });
-  }
-
-  function updateLocationById(locId: string, patch: Partial<WorldLocation>) {
-    setWorld((prev) => ({
-      ...prev,
-      locations: prev.locations.map((l) =>
-        l.id === locId ? { ...l, ...patch } : l
-      ),
-    }));
-  }
-
-  function deleteLocationById(locId: string) {
-    setWorld((prev) => ({
-      ...prev,
-      locations: prev.locations.filter((l) => l.id !== locId),
-    }));
-
-    setTagDraftByLocId((prev) => {
-      const next = { ...prev };
-      delete next[locId];
-      return next;
-    });
-  }
-
-  function addTagToLocation(locId: string, rawTag: string) {
-    const clean = rawTag.trim();
-    if (!clean) return;
-
-    setWorld((prev) => ({
-      ...prev,
-      locations: prev.locations.map((l) => {
-        if (l.id !== locId) return l;
-        const existing = l.tags ?? [];
-        if (existing.includes(clean)) return l;
-        return { ...l, tags: [...existing, clean] };
-      }),
-    }));
-  }
-
-  function removeTagFromLocation(locId: string, tag: string) {
-    setWorld((prev) => ({
-      ...prev,
-      locations: prev.locations.map((l) => {
-        if (l.id !== locId) return l;
-        return { ...l, tags: (l.tags ?? []).filter((t) => t !== tag) };
-      }),
-    }));
-  }
-  function normalizeTag(tag: string) {
-    return tag.trim().toLowerCase();
-  }
-
-  function renameTagEverywhere(from: string, to: string) {
-    const src = normalizeTag(from);
-    const dstKey = normalizeTag(to);
-    const dstLabel = to.trim();
-    if (!src || !dstKey || !dstLabel) return;
-    if (src === dstKey) return;
-
-    // ✅ keep UI filters in sync (ONE TIME)
-    setTagFilters((prev) => {
-      const next = prev.map((t) =>
-        normalizeTag(t) === src ? dstKey : normalizeTag(t)
-      );
-      return Array.from(new Set(next)).filter(Boolean);
-    });
-
-    setWorld((prev) => {
-      // 1) update locations.tags
-      const nextLocations = prev.locations.map((l) => {
-        const tags = l.tags ?? [];
-        const replaced = tags.map((t) =>
-          normalizeTag(t) === src ? dstLabel : t
-        );
-
-        // dedupe case-insensitively
-        const seen = new Set<string>();
-        const deduped: string[] = [];
-        for (const t of replaced) {
-          const k = normalizeTag(t);
-          if (seen.has(k)) continue;
-          seen.add(k);
-          deduped.push(t);
-        }
-
-        return { ...l, tags: deduped };
-      });
-
-      // 2) update tagMeta (move src -> dstKey)
-      const nextTagMeta = { ...(prev.tagMeta ?? {}) };
-      if (nextTagMeta[src]) {
-        nextTagMeta[dstKey] = {
-          ...(nextTagMeta[dstKey] ?? {}),
-          ...nextTagMeta[src],
-        };
-        delete nextTagMeta[src];
-      }
-
-      return {
-        ...prev,
-        locations: nextLocations,
-        tagMeta: nextTagMeta,
-      };
-    });
-  }
-
-  function deleteTagEverywhere(tag: string) {
-    const kill = normalizeTag(tag);
-    if (!kill) return;
-
-    // ✅ keep UI filters in sync
-    setTagFilters((prev) => prev.filter((t) => normalizeTag(t) !== kill));
-
-    setWorld((prev) => {
-      const nextTagMeta = { ...(prev.tagMeta ?? {}) };
-      delete nextTagMeta[kill];
-
-      return {
-        ...prev,
-        locations: prev.locations.map((l) => ({
-          ...l,
-          tags: (l.tags ?? []).filter((t) => normalizeTag(t) !== kill),
-        })),
-        tagMeta: nextTagMeta,
-      };
-    });
-  }
-
-  // merge = rename (your current behavior)
-  function mergeTagEverywhere(from: string, to: string) {
-    renameTagEverywhere(from, to);
-  }
-  // ------------------------------
-  // Import JSON
-  // ------------------------------
+  // Import
+  const importInputRef = useRef<HTMLInputElement | null>(null);
   async function onImportFile(file: File) {
     try {
       const text = await file.text();
       const parsed = JSON.parse(text) as unknown;
       const loaded = loadGameWorldFile(parsed);
-      setWorld(loaded);
-
+      dispatch({ type: "LOAD_WORLD", world: loaded });
       setTagFilters([]);
       setTagDraftByLocId({});
-      setActiveTab("world");
-
-      alert("Imported successfully");
+      success(
+        "Import Successful",
+        "Your world file has been loaded successfully.",
+      );
     } catch (err) {
       console.error("Import failed:", err);
-      alert("Invalid or incompatible JSON file");
+      error(
+        "Import Failed",
+        "The file could not be read. Make sure it's a valid world JSON file.",
+      );
     } finally {
       if (importInputRef.current) importInputRef.current.value = "";
     }
   }
-  // ------------------------------
-  // Render
-  // ------------------------------
+
   return (
     <div
       style={{
@@ -421,13 +96,22 @@ export default function App() {
         fontFamily: "system-ui, sans-serif",
         color: "#eee",
         position: "relative",
-        zIndex: 1, // 👈 sits above body::before
+        zIndex: 1,
       }}
     >
-      {/* SIDEBAR */}
+      {/* Global modal */}
+      <Modal config={config} onClose={closeModal} />
+
+      {/* Export modal */}
+      {showExportModal && (
+        <ExportModal
+          world={syncedWorld}
+          onClose={() => setShowExportModal(false)}
+        />
+      )}
+
       <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
 
-      {/* HIDDEN IMPORT INPUT */}
       <input
         ref={importInputRef}
         type="file"
@@ -439,7 +123,6 @@ export default function App() {
         }}
       />
 
-      {/* MAIN */}
       <main
         style={{
           flex: 1,
@@ -458,40 +141,45 @@ export default function App() {
             letterSpacing: "-0.5px",
             color: "#f8faff",
             textShadow: `
-      0 0 20px rgba(120,180,255,0.75),
-      0 0 40px rgba(120,180,255,0.55),
-      0 0 80px rgba(30,100,255,0.35)
-    `,
+              0 0 20px rgba(120,180,255,0.75),
+              0 0 40px rgba(120,180,255,0.55),
+              0 0 80px rgba(30,100,255,0.35)
+            `,
             textAlign: "center",
           }}
         >
           Open World Toolkit (Editor)
         </h1>
-        {/* WORLD */}
+
         {activeTab === "world" && (
           <>
             <button
-              onClick={() => {
-                if (
-                  confirm("This will reset all saved world data. Continue?")
-                ) {
-                  resetSavedWorld();
-                }
-              }}
+              onClick={() =>
+                confirm(
+                  "Reset World Data",
+                  "This will permanently reset all saved world data and cannot be undone. Continue?",
+                  () => resetSavedWorld(),
+                  { confirmLabel: "Reset", cancelLabel: "Cancel" },
+                )
+              }
               style={{ marginBottom: 12 }}
             >
               Reset saved data
             </button>
-
             <WorldEditor
-              world={world}
-              onUpdateWorld={updateWorldInfo}
+              world={syncedWorld}
+              onUpdateWorld={(patch) =>
+                dispatch({ type: "UPDATE_WORLD_INFO", patch })
+              }
               onExport={() => {
                 if (hasErrors) {
-                  alert("Fix errors before exporting.");
+                  error(
+                    "Cannot Export",
+                    `Fix ${errorIssues.length} error${errorIssues.length > 1 ? "s" : ""} before exporting. Check the Preview tab for details.`,
+                  );
                   return;
                 }
-                downloadJson("world_export.json", syncedWorld);
+                setShowExportModal(true);
               }}
               onImportClick={() => importInputRef.current?.click()}
               hasErrors={hasErrors}
@@ -501,25 +189,30 @@ export default function App() {
           </>
         )}
 
-        {/* MAPS */}
         {activeTab === "maps" && (
           <MapsEditor
             maps={syncedWorld.maps}
-            onAddMap={addMap}
-            onUpdateMap={updateMap}
-            onDeleteMap={(mapId) => {
-              if (
-                confirm(
-                  `Delete map "${mapId}"? Locations on that map will become unassigned.`
-                )
-              ) {
-                deleteMap(mapId);
-              }
-            }}
+            locations={syncedWorld.locations}
+            tagMeta={syncedWorld.tagMeta ?? {}}
+            onAddMap={() => dispatch({ type: "ADD_MAP" })}
+            onUpdateMap={(mapId, patch) =>
+              dispatch({ type: "UPDATE_MAP", mapId, patch })
+            }
+            onDeleteMap={(mapId) =>
+              confirm(
+                "Delete Map",
+                `Delete map "${mapId}"? All locations on this map will become unassigned.`,
+                () => dispatch({ type: "DELETE_MAP", mapId }),
+                { confirmLabel: "Delete", cancelLabel: "Cancel" },
+              )
+            }
+            onUpdateLocation={(locId, patch) =>
+              dispatch({ type: "UPDATE_LOCATION", locId, patch })
+            }
+            onAddLocation={() => dispatch({ type: "ADD_LOCATION" })}
           />
         )}
 
-        {/* LOCATIONS */}
         {activeTab === "locations" && (
           <LocationsEditor
             locations={syncedWorld.locations}
@@ -530,31 +223,92 @@ export default function App() {
             tagDraftByLocId={tagDraftByLocId}
             setTagDraftByLocId={setTagDraftByLocId}
             tagSuggestions={tagSuggestions}
-            onAddLocation={addLocation}
-            onUpdateLocation={updateLocationById}
-            onDeleteLocation={(locId) => {
-              if (
-                confirm(`Delete location '${locId}'? This cannot be undone.`)
-              ) {
-                deleteLocationById(locId);
-              }
-            }}
-            onAddTag={addTagToLocation}
-            onRemoveTag={removeTagFromLocation}
+            onAddLocation={() => dispatch({ type: "ADD_LOCATION" })}
+            onUpdateLocation={(locId, patch) =>
+              dispatch({ type: "UPDATE_LOCATION", locId, patch })
+            }
+            onDeleteLocation={(locId) =>
+              confirm(
+                "Delete Location",
+                `Delete location "${locId}"? This cannot be undone.`,
+                () => dispatch({ type: "DELETE_LOCATION", locId }),
+                { confirmLabel: "Delete", cancelLabel: "Cancel" },
+              )
+            }
+            onAddTag={(locId, tag) =>
+              dispatch({ type: "ADD_TAG_TO_LOCATION", locId, tag })
+            }
+            onRemoveTag={(locId, tag) =>
+              dispatch({ type: "REMOVE_TAG_FROM_LOCATION", locId, tag })
+            }
           />
         )}
-        {/* TAGS */}
+
         {activeTab === "tags" && (
           <TagsEditor
             locations={syncedWorld.locations}
             tagMeta={syncedWorld.tagMeta ?? {}}
-            onUpdateTagMeta={updateTagMeta}
-            onRenameTag={renameTagEverywhere}
-            onMergeTag={mergeTagEverywhere}
-            onDeleteTag={deleteTagEverywhere}
+            onUpdateTagMeta={(tag, patch) =>
+              dispatch({ type: "UPDATE_TAG_META", tag, patch })
+            }
+            onRenameTag={(from, to) =>
+              dispatch({ type: "RENAME_TAG", from, to })
+            }
+            onMergeTag={(from, to) =>
+              dispatch({ type: "RENAME_TAG", from, to })
+            }
+            onDeleteTag={(tag) => dispatch({ type: "DELETE_TAG", tag })}
           />
         )}
-        {/* PREVIEW */}
+
+        {activeTab === "quests" && (
+          <QuestsEditor
+            quests={syncedWorld.quests ?? []}
+            npcs={syncedWorld.npcs ?? []}
+            locations={syncedWorld.locations}
+            onAddQuest={() => dispatch({ type: "ADD_QUEST" })}
+            onUpdateQuest={(questId, patch) =>
+              dispatch({ type: "UPDATE_QUEST", questId, patch })
+            }
+            onDeleteQuest={(questId) =>
+              confirm(
+                "Delete Quest",
+                `Delete "${syncedWorld.quests?.find((q) => q.id === questId)?.title ?? questId}"? This cannot be undone.`,
+                () => dispatch({ type: "DELETE_QUEST", questId }),
+                { confirmLabel: "Delete", cancelLabel: "Cancel" },
+              )
+            }
+            onAddObjective={(questId) =>
+              dispatch({ type: "ADD_OBJECTIVE", questId })
+            }
+            onUpdateObjective={(questId, objId, patch) =>
+              dispatch({ type: "UPDATE_OBJECTIVE", questId, objId, patch })
+            }
+            onDeleteObjective={(questId, objId) =>
+              dispatch({ type: "DELETE_OBJECTIVE", questId, objId })
+            }
+          />
+        )}
+        {activeTab === "npcs" && (
+          <NpcsEditor
+            npcs={syncedWorld.npcs ?? []}
+            locations={syncedWorld.locations}
+            maps={syncedWorld.maps}
+            onAddNpc={() => dispatch({ type: "ADD_NPC" })}
+            onUpdateNpc={(npcId, patch) =>
+              dispatch({ type: "UPDATE_NPC", npcId, patch })
+            }
+            onDeleteNpc={(npcId) =>
+              confirm(
+                "Delete NPC",
+                `Delete "${syncedWorld.npcs?.find((n) => n.id === npcId)?.name ?? npcId}"? This cannot be undone.`,
+                () => dispatch({ type: "DELETE_NPC", npcId }),
+                { confirmLabel: "Delete", cancelLabel: "Cancel" },
+              )
+            }
+          />
+        )}
+
         {activeTab === "preview" && (
           <PreviewTab
             world={syncedWorld}
@@ -565,5 +319,13 @@ export default function App() {
         )}
       </main>
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <WorldProvider>
+      <AppInner />
+    </WorldProvider>
   );
 }
