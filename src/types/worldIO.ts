@@ -173,6 +173,8 @@ export function migrateGameWorldFile(input: unknown): GameWorldFile {
       maps: [],
       locations: [],
       tagMeta: {},
+      npcs: [],
+      quests: [],
     };
   }
 
@@ -212,9 +214,13 @@ export function migrateGameWorldFile(input: unknown): GameWorldFile {
     tagMeta: isRecord(input.tagMeta)
       ? (input.tagMeta as Record<string, TagMeta>)
       : {},
-    npcs: Array.isArray(input.npcs) ? input.npcs : undefined,
+    npcs: Array.isArray(input.npcs)
+      ? (input.npcs as GameWorldFile["npcs"])
+      : [],
+    quests: Array.isArray(input.quests)
+      ? (input.quests as GameWorldFile["quests"])
+      : [],
     items: Array.isArray(input.items) ? input.items : undefined,
-    quests: Array.isArray(input.quests) ? input.quests : undefined,
     triggers: Array.isArray(input.triggers) ? input.triggers : undefined,
   };
 }

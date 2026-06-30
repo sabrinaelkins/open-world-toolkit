@@ -184,7 +184,18 @@ export function TerrainEditor({ map, locations, onUpdateMap }: Props) {
   };
 
   function update(patch: Partial<TerrainGenOptions>) {
-    onUpdateMap(map.id, { terrainGen: { ...tg, ...patch } });
+    onUpdateMap(map.id, {
+      terrainGen: {
+        algo: "fbm" as const,
+        seed: patch.seed ?? tg.seed ?? 42,
+        scale: patch.scale ?? tg.scale ?? 18,
+        octaves: patch.octaves ?? tg.octaves ?? 4,
+        lacunarity: patch.lacunarity ?? tg.lacunarity ?? 2.0,
+        gain: patch.gain ?? tg.gain ?? 0.5,
+        warp: patch.warp ?? tg.warp ?? 0,
+        grid: patch.grid ?? tg.grid ?? { width: 32, height: 32 },
+      },
+    });
   }
 
   const heightmap = useMemo(
