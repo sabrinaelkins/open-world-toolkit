@@ -1,8 +1,8 @@
-# 🌍 Open World Toolkit
+# Open World Toolkit
 
 A professional-grade **browser-based world editor** for indie game developers. Design maps, place locations, build NPCs and quests, generate procedural terrain, and export to multiple formats — all in a beautiful dark UI with no backend required.
 
-**[🚀 Live Demo](https://open-world-tool.vercel.app)** · Built with React 19 + TypeScript + Vite + Tailwind CSS
+**[Live Demo](https://open-world-tool.vercel.app)** · Built with React 19 + TypeScript + Vite + Tailwind CSS
 
 ---
 
@@ -10,9 +10,9 @@ A professional-grade **browser-based world editor** for indie game developers. D
 
 ---
 
-## ✨ Features
+## Features
 
-### 🗺️ Maps & Terrain
+### Maps & Terrain
 
 - Create and manage multiple maps with custom dimensions
 - **Procedural terrain generation** using FBM (Fractal Brownian Motion) noise
@@ -20,20 +20,20 @@ A professional-grade **browser-based world editor** for indie game developers. D
 - Full terrain controls: seed, scale, octaves, lacunarity, gain, domain warp
 - Live 256×256 terrain preview with biome breakdown bar
 
-### 📍 Visual Map Canvas
+### Visual Map Canvas
 
 - **Drag & drop location pins** on a rendered terrain canvas
 - **Scroll to zoom** (50%–800%), **Alt+drag to pan**
 - Location pins auto-named by terrain biome ("Dark Wood", "Mountain Peak", etc.)
 - Click a pin to select and edit its properties in a side panel
 
-### 🧑 NPC System
+### NPC System
 
 - 9 NPC roles: villager, merchant, quest giver, guard, companion, enemy, boss, neutral, custom
 - Assign NPCs to locations with auto map resolution
 - Intro dialogue and design notes per NPC
 
-### 📜 Quest System
+### Quest System
 
 - 4 quest types: main, side, daily, hidden
 - Checklist objectives with optional location tie-ins
@@ -41,20 +41,20 @@ A professional-grade **browser-based world editor** for indie game developers. D
 - Live progress bar per quest
 - Status tracking: draft → active → completed / failed
 
-### 🏷️ Tag System
+### Tag System
 
 - Add tags to locations with autocomplete and quick-tag buttons
 - Tag metadata: category, color, description
 - Global rename, merge, and delete tags across the entire world
 - Filter locations by tag (ANY / ALL mode)
 
-### 💾 Export Formats
+### Export Formats
 
 - **Native JSON** — full reimportable world file
 - **CSV** — flat location table for Unity/Godot importers and spreadsheets
 - **Tiled .tmj** — one file per map, compatible with Tiled Map Editor 1.10+
 
-### 🔧 Editor Quality of Life
+### Editor Quality of Life
 
 - **Undo/Redo** — up to 50 steps, `Cmd+Z` / `Cmd+Shift+Z`
 - **Minimap** in sidebar with live terrain and location pins
@@ -66,7 +66,7 @@ A professional-grade **browser-based world editor** for indie game developers. D
 
 ---
 
-## 🛠️ Tech Stack
+## Tech Stack
 
 | Layer      | Technology                 |
 | ---------- | -------------------------- |
@@ -81,7 +81,7 @@ A professional-grade **browser-based world editor** for indie game developers. D
 
 ---
 
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
 
@@ -143,7 +143,7 @@ src/
 
 ---
 
-## 🗺️ World File Format
+## World File Format
 
 ```json
 {
@@ -176,12 +176,12 @@ src/
 
 ---
 
-## 📄 License
+## License
 
 MIT © 2026 Sabrina Elkins — see [LICENSE](LICENSE) for details.
 
 ---
 
-## 🙏 Contributing
+## Contributing
 
 PRs welcome! The codebase is intentionally modular — each editor tab is a self-contained component that reads from `useWorld()` and dispatches typed actions.
